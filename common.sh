@@ -3,6 +3,7 @@ CARDANO_NODE_VERSION="10.4.1"
 CARDANO_NODE_PORT=3001
 USER=$SUDO_USER
 HOME=/home/$USER
+CARDANO_NODE_SRC_DIR=$HOME/cardano-node-source
 DB_PATH="$HOME/db"
 SOCKET_PATH="$DB_PATH/node.socket"
 CONFIG_DIR="$HOME/cardano-node-config"
@@ -11,13 +12,21 @@ START_SCRIPT_PATH="$SCRIPTS_DIR/start.sh"
 TIP_SCRIPT_PATH="$SCRIPTS_DIR/tip.sh"
 SYSTEMD_SERVICE_PATH="/etc/systemd/system/cardano-node.service"
 
-# install git and nix if not already installed
-install_deps() {
+install_build_deps() {
   apt-get -y install git nix
+}
+
+clone_cardano_node_source() {
+  git clone $CARDANO_NODE_REPO $CARDANO_NODE_SRC_DIR || exit 1
+
+  cd $CARDANO_NODE_SRC_DIR
+
+  git switch -d tags/${CARDANO_NODE_VERSION}
 }
 
 get_nix_store_dir() {
   file=$1
+
   find /nix/store/*/bin -name $file | head -1 | xargs dirname
 }
 
@@ -79,8 +88,7 @@ get_public_ip() {
 }
 
 write_script() {
-  path=$1
-  shift
+  path=$1; shift
   content=$@
 
   dir=$(dirname $path)
@@ -120,9 +128,10 @@ get_cli_testnet_magic() {
 }
 
 create_tip_script() {
+  network_name=$1
+
   echo "Creating ${TIP_SCRIPT_PATH}..."
 
-  network_name=$1
   testnet_magic=$(get_cli_testnet_magic $network_name)
 
   script="#!/bin/bash\\ncardano-cli query tip $testnet_magic --socket-path $SOCKET_PATH"
@@ -168,29 +177,22 @@ start_cardano_node_service() {
   echo "Started cardano-node service"
 }
 
-# installs cardano-node
 install_cardano_node_and_cli() {
   network_name=$1
 
-  install_deps || exit 1
+  install_build_deps || exit 1
 
-  cd $HOME
-
-  git clone $CARDANO_NODE_REPO || exit 1
-
-  cd cardano-node
-
-  git switch -d tags/${CARDANO_NODE_VERSION}
+  clone_cardano_node_source || exit 1
 
   install_cardano_node || exit 1
 
   install_cardano_cli || exit 1
 
-  download_network_config || exit 1
+  download_network_config $network_name || exit 1
 
-  create_startup_script || exit 1
+  create_start_script || exit 1
 
-  create_tip_script || exit 1
+  create_tip_script $network_name || exit 1
 
   start_cardano_node_service || exit 1
 }
