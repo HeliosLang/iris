@@ -24,9 +24,11 @@ install_cardano_binary() {
 
   echo "Installing ${name}..."
 
-  nix build --extra-experimental-features nix-command --extra-experimental-features flakes --yes .#$name
+  yes | nix build --extra-experimental-features nix-command --extra-experimental-features flakes .#$name
 
   bin_dir=$(get_nix_store_dir $name)
+
+  echo "Adding ${bin_dir} to $HOME/.bashrc"
 
   echo "export \$PATH=\$PATH:$bin_dir" >> $HOME/.bashrc
 
