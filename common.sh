@@ -105,9 +105,12 @@ create_start_script() {
 
   public_ip=$(get_public_ip)
 
-  script="#!/bin/bash\\ncardano-node run --config $CONFIG_DIR/config.json --database-path $DB_PATH --socket-path $SOCKET_PATH --host-addr $public_ip --port $CARDANO_NODE_PORT --topology $CONFIG_DIR/topology.json"
+  cat > $START_SCRIPT_PATH << END
+#!/bin/bash
+cardano-node run --config $CONFIG_DIR/config.json --database-path $DB_PATH --socket-path $SOCKET_PATH --host-addr $public_ip --port $CARDANO_NODE_PORT --topology $CONFIG_DIR/topology.json
+END
 
-  write_script $START_SCRIPT_PATH $script
+  chmod +x $START_SCRIPT_PATH
 
   echo "Created ${START_SCRIPT_PATH}"
 }
@@ -134,15 +137,19 @@ create_tip_script() {
 
   testnet_magic=$(get_cli_testnet_magic $network_name)
 
-  script="#!/bin/bash\\ncardano-cli query tip $testnet_magic --socket-path $SOCKET_PATH"
+  cat > $TIP_SCRIPT_PATH << EOF
+#!/bin/bash
+cardano-cli query tip $testnet_magic --socket-path $SOCKET_PATH
+EOF
 
-  write_script $TIP_SCRIPT_PATH $script
+  chmod +x $TIP_SCRIPT_PATH
 
   echo "Created ${TIP_SCRIPT_PATH}"
 }
 
 create_cardano_node_service() {
-  entry="[Unit]
+  cat > $SYSTEMD_SERVICE_PATH << EOF
+[Unit]
 Description=Cardano Node
 Requires=network.target
 
@@ -162,9 +169,8 @@ SyslogIdentifier=cardano-node
 LimitNOFILE=32768
 
 [Install]
-WantedBy=multi-user.target"
-
-  echo $entry > $SYSTEMD_SERVICE_PATH
+WantedBy=multi-user.target
+EOF
 }
 
 start_cardano_node_service() {
