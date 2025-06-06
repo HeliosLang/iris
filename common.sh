@@ -97,9 +97,9 @@ create_start_script() {
   cat > $START_SCRIPT_PATH << END
 #!/bin/bash
 cardano-node run --config $CONFIG_DIR/config.json --database-path $DB_PATH --socket-path $SOCKET_PATH --host-addr $public_ip --port $CARDANO_NODE_PORT --topology $CONFIG_DIR/topology.json
-END
+END || exit 1
 
-  chmod +x $START_SCRIPT_PATH
+  chmod +x $START_SCRIPT_PATH || exit 1
 
   echo "Created ${START_SCRIPT_PATH}"
 }
@@ -131,16 +131,16 @@ create_tip_script() {
   cat > $TIP_SCRIPT_PATH << EOF
 #!/bin/bash
 cardano-cli query tip $testnet_magic --socket-path $SOCKET_PATH
-EOF
+EOF || exit 1
 
-  chmod +x $TIP_SCRIPT_PATH
+  chmod +x $TIP_SCRIPT_PATH || exit 1
 
   echo "Created ${TIP_SCRIPT_PATH}"
 }
 
 create_cardano_node_service() {
   mkdir -p $(dirname $SYSTEMD_SERVICE_PATH)
-  
+
   cat > $SYSTEMD_SERVICE_PATH << EOF
 [Unit]
 Description=Cardano Node
@@ -163,7 +163,7 @@ LimitNOFILE=32768
 
 [Install]
 WantedBy=multi-user.target
-EOF
+EOF || exit 1
 }
 
 start_cardano_node_service() {
