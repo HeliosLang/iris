@@ -87,16 +87,25 @@ get_public_ip() {
   hostname -I | awk '{print $1}'
 }
 
+get_cardano_node_path() {
+  echo "$(get_nix_store_dir "cardano-node")/cardano-node"
+}
+
+get_cardano_cli_path() {
+  echo "$(get_nix_store_dir "cardano-cli")/cardano-cli"
+}
+
 create_start_script() {
   echo "Creating ${START_SCRIPT_PATH}..."
 
   public_ip=$(get_public_ip)
+  bin_path=$(get_cardano_node_path)
 
   mkdir -p $(dirname $START_SCRIPT_PATH)
 
   cat > $START_SCRIPT_PATH << END
 #!/bin/bash
-cardano-node run --config $CONFIG_DIR/config.json --database-path $DB_PATH --socket-path $SOCKET_PATH --host-addr $public_ip --port $CARDANO_NODE_PORT --topology $CONFIG_DIR/topology.json
+$bin_path run --config $CONFIG_DIR/config.json --database-path $DB_PATH --socket-path $SOCKET_PATH --host-addr $public_ip --port $CARDANO_NODE_PORT --topology $CONFIG_DIR/topology.json
 END
 
   chmod +x $START_SCRIPT_PATH || exit 1
@@ -125,12 +134,13 @@ create_tip_script() {
   echo "Creating ${TIP_SCRIPT_PATH}..."
 
   testnet_magic=$(get_cli_testnet_magic $network_name)
+  bin_path=$(get_cardano_cli_path)
 
   mkdir -p $(dirname $TIP_SCRIPT_PATH)
 
   cat > $TIP_SCRIPT_PATH << EOF
 #!/bin/bash
-cardano-cli query tip $testnet_magic --socket-path $SOCKET_PATH
+$bin_path query tip $testnet_magic --socket-path $SOCKET_PATH
 EOF
 
   chmod +x $TIP_SCRIPT_PATH || exit 1
