@@ -98,7 +98,6 @@ create_start_script() {
 #!/bin/bash
 cardano-node run --config $CONFIG_DIR/config.json --database-path $DB_PATH --socket-path $SOCKET_PATH --host-addr $public_ip --port $CARDANO_NODE_PORT --topology $CONFIG_DIR/topology.json
 END
-|| exit 1
 
   chmod +x $START_SCRIPT_PATH || exit 1
 
@@ -133,7 +132,6 @@ create_tip_script() {
 #!/bin/bash
 cardano-cli query tip $testnet_magic --socket-path $SOCKET_PATH
 EOF
-|| exit 1
 
   chmod +x $TIP_SCRIPT_PATH || exit 1
 
@@ -152,21 +150,20 @@ Requires=network.target
 Type=simple
 Restart=always
 RestartSec=60
-User=${whoami}
-Group=${id -g}
-WorkingDirectory=${HOME}
-ExecStart=${START_SCRIPT_PATH}
+User=$USER
+Group=1000
+WorkingDirectory=$HOME
+ExecStart=$START_SCRIPT_PATH
 KillSignal=SIGINT
 RestartKillSignal=SIGINT
 StandardOutput=journal
-StandardError=jounral
+StandardError=journal
 SyslogIdentifier=cardano-node
 LimitNOFILE=32768
 
 [Install]
 WantedBy=multi-user.target
 EOF
-|| exit 1
 }
 
 start_cardano_node_service() {
