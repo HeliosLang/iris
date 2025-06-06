@@ -113,12 +113,12 @@ END
   echo "Created ${START_SCRIPT_PATH}"
 }
 
-get_cli_testnet_magic() {
+get_cli_network_flag() {
   network_name=$1
 
   if [[ $network_name == "mainnet" ]]
   then
-    echo ""
+    echo "--mainnet"
   elif [[ $network_name == "preprod" ]]
   then
     echo "--testnet-magic 1"
@@ -133,14 +133,14 @@ create_tip_script() {
 
   echo "Creating ${TIP_SCRIPT_PATH}..."
 
-  testnet_magic=$(get_cli_testnet_magic $network_name)
+  network_flag=$(get_cli_network_flag $network_name)
   bin_path=$(get_cardano_cli_path)
 
   mkdir -p $(dirname $TIP_SCRIPT_PATH)
 
   cat > $TIP_SCRIPT_PATH << EOF
 #!/bin/bash
-$bin_path query tip $testnet_magic --socket-path $SOCKET_PATH
+$bin_path query tip $network_flag --socket-path $SOCKET_PATH
 EOF
 
   chmod +x $TIP_SCRIPT_PATH || exit 1
@@ -204,4 +204,11 @@ install_cardano_node_and_cli() {
   create_tip_script $network_name || exit 1
 
   start_cardano_node_service || exit 1
+}
+
+install_blockfrost() {
+  echo "substituters = https://cache.nixos.org https://cache.iog.io" >> /etc/nix/nix.conf
+  echo "trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ=" >> /etc/nix/nix.conf
+
+  nix build github:blockfrost/blockfrost-platform/0.0.2
 }
