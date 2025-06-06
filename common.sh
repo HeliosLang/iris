@@ -87,23 +87,12 @@ get_public_ip() {
   hostname -I | awk '{print $1}'
 }
 
-write_script() {
-  path=$1; shift
-  content=$@
-
-  dir=$(dirname $path)
-
-  mkdir -p $dir
-
-  echo $content > $path
-
-  chmod +x $path
-}
-
 create_start_script() {
   echo "Creating ${START_SCRIPT_PATH}..."
 
   public_ip=$(get_public_ip)
+
+  mkdir -p $(dirname $START_SCRIPT_PATH)
 
   cat > $START_SCRIPT_PATH << END
 #!/bin/bash
@@ -137,6 +126,8 @@ create_tip_script() {
 
   testnet_magic=$(get_cli_testnet_magic $network_name)
 
+  mkdir -p $(dirname $TIP_SCRIPT_PATH)
+
   cat > $TIP_SCRIPT_PATH << EOF
 #!/bin/bash
 cardano-cli query tip $testnet_magic --socket-path $SOCKET_PATH
@@ -148,6 +139,8 @@ EOF
 }
 
 create_cardano_node_service() {
+  mkdir -p $(dirname $SYSTEMD_SERVICE_PATH)
+  
   cat > $SYSTEMD_SERVICE_PATH << EOF
 [Unit]
 Description=Cardano Node
