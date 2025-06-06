@@ -15,7 +15,7 @@ Run any of the following commands to install cardano-node along with
 
 ```bash
 curl -fsSL \
-     https://github.com/HeliosLang/cardano-node-install/bloc/main/preprod-with-blockfrost.sh \
+     https://raw.githubusercontent.com/HeliosLang/cardano-node-install/refs/heads/main/preprod-with-blockfrost.sh \
      | bash
 ```
 
@@ -23,7 +23,7 @@ curl -fsSL \
 
 ```bash
 curl -fsSL \
-     https://github.com/HeliosLang/cardano-node-install/blob/main/mainnet-with-blockfrost.sh \
+     https://raw.githubusercontent.com/HeliosLang/cardano-node-install/refs/heads/main/mainnet-with-blockfrost.sh \
      | bash
 ```
 
