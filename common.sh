@@ -1,6 +1,8 @@
 CARDANO_NODE_REPO="https://github.com/IntersectMBO/cardano-node"
 CARDANO_NODE_VERSION="10.4.1"
 CARDANO_NODE_PORT=3001
+USER=$SUDO_USER
+HOME=/home/$USER
 DB_PATH="$HOME/db"
 SOCKET_PATH="$DB_PATH/node.socket"
 CONFIG_DIR="$HOME/cardano-node-config"
