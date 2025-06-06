@@ -172,25 +172,25 @@ start_cardano_node_service() {
 install_cardano_node_and_cli() {
   network_name=$1
 
-  install_deps
+  install_deps || exit 1
 
   cd $HOME
 
-  git clone $CARDANO_NODE_REPO
+  git clone $CARDANO_NODE_REPO || exit 1
 
   cd cardano-node
 
   git switch -d tags/${CARDANO_NODE_VERSION}
 
-  install_cardano_node
+  install_cardano_node || exit 1
 
-  install_cardano_cli
+  install_cardano_cli || exit 1
 
-  download_network_config
+  download_network_config || exit 1
 
-  create_startup_script
+  create_startup_script || exit 1
 
-  create_tip_script
+  create_tip_script || exit 1
 
-  start_cardano_node_service
+  start_cardano_node_service || exit 1
 }
