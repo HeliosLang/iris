@@ -30,12 +30,16 @@ get_nix_store_dir() {
   find /nix/store/*/bin -name $file | head -1 | xargs dirname
 }
 
+nix_build() {
+  nix build --extra-experimental-features nix-command --extra-experimental-features flakes $@
+}
+
 install_cardano_binary() {
   name=$1
 
   echo "Installing ${name}..."
 
-  yes | nix build --extra-experimental-features nix-command --extra-experimental-features flakes .#$name
+  yes | nix_build .#$name
 
   bin_dir=$(get_nix_store_dir $name)
 
@@ -206,9 +210,53 @@ install_cardano_node_and_cli() {
   start_cardano_node_service || exit 1
 }
 
-install_blockfrost() {
-  echo "substituters = https://cache.nixos.org https://cache.iog.io" >> /etc/nix/nix.conf
-  echo "trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ=" >> /etc/nix/nix.conf
+get_blockfrost_archive_name() {
+  project_name="blockfrost-platform"
+  version="0.0.2"
+  short_rev="e06029b"
 
-  nix build github:blockfrost/blockfrost-platform/0.0.2
+  isa="$(uname -m)"
+  kernel="$(uname -s)"
+  case "${isa}-${kernel}" in
+  "x86_64-Linux")
+    target_system="x86_64-linux"
+    #expected_sha256="b08ec52144fffa8332dab3a6590991206df92752e91e809013588dd2ae1077ee"
+    ;;
+  "aarch64-Linux")
+    target_system="aarch64-linux"
+    #expected_sha256="f8210e02606ee3ad47174552c0e6b1e60759714b9d44d909f5cf135486bc63bf"
+    ;;
+  "x86_64-Darwin")
+    target_system="x86_64-darwin"
+    #expected_sha256="ad6d1f3cffbd0242c21cf8016babce3d834bba4c2340c82ed3dd88fc04ca5800"
+    ;;
+  # Apple Silicon can appear as "arm64-Darwin" rather than "aarch64-Darwin":
+  "arm64-Darwin")
+    target_system="aarch64-darwin"
+    #expected_sha256="699c352358132b9a349fe74619fa592ffae9478d792d209d903f319bb5c56c31"
+    ;;
+  "aarch64-Darwin")
+    target_system="aarch64-darwin"
+    #expected_sha256="699c352358132b9a349fe74619fa592ffae9478d792d209d903f319bb5c56c31"
+    ;;
+  *)
+    echo >&2 "fatal: no matching installer found for ${isa}-${kernel}" >&2
+    exit 1
+    ;;
+  esac
+  unset isa
+  unset kernel
+
+  archive="${project_name}-${version}-${short_rev}-${target_system}.tar.bz2"
+
+  echo $archive
+}
+
+install_blockfrost() {
+  archive=$(get_blockfrost_archive_name)
+  download_path=$HOME/$archive
+  base_url="https://github.com/blockfrost/blockfrost-platform/releases/download/0.0.2"
+  wget -O "${download_path}" "$base_url/$archive"
+
+  tar -xjf "$download_path"
 }
