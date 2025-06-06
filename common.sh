@@ -1,6 +1,7 @@
 CARDANO_NODE_REPO="https://github.com/IntersectMBO/cardano-node"
 CARDANO_NODE_VERSION="10.4.1"
 CARDANO_NODE_PORT=3001
+BLOCKFROST_PORT=3000
 USER=$SUDO_USER
 HOME=/home/$USER
 CARDANO_NODE_SRC_DIR=$HOME/cardano-node-source
@@ -9,8 +10,10 @@ SOCKET_PATH="$DB_PATH/node.socket"
 CONFIG_DIR="$HOME/cardano-node-config"
 SCRIPTS_DIR="$HOME/scripts"
 START_SCRIPT_PATH="$SCRIPTS_DIR/start.sh"
+START_BLOCKFROST_SCRIPT_PATH="$SCRIPTS_DIR/start_blockfrost.sh"
 TIP_SCRIPT_PATH="$SCRIPTS_DIR/tip.sh"
-SYSTEMD_SERVICE_PATH="/etc/systemd/system/cardano-node.service"
+CARDANO_NODE_SERVICE_PATH="/etc/systemd/system/cardano-node.service"
+BLOCKFROST_SERVICE_PATH="/etc/systemd/system/blockfrost.service"
 
 install_build_deps() {
   apt-get -y install git nix
@@ -34,6 +37,12 @@ nix_build() {
   nix build --extra-experimental-features nix-command --extra-experimental-features flakes $@
 }
 
+add_to_path() {
+  p=$1
+
+  echo "export \$PATH=\$PATH:$p" >> $HOME/.bashrc
+}
+
 install_cardano_binary() {
   name=$1
 
@@ -45,7 +54,7 @@ install_cardano_binary() {
 
   echo "Adding ${bin_dir} to $HOME/.bashrc"
 
-  echo "export \$PATH=\$PATH:$bin_dir" >> $HOME/.bashrc
+  add_to_path $bin_dir
 
   echo "Installed ${name}"
 }
@@ -153,9 +162,9 @@ EOF
 }
 
 create_cardano_node_service() {
-  mkdir -p $(dirname $SYSTEMD_SERVICE_PATH)
+  mkdir -p $(dirname $CARDANO_NODE_SERVICE_PATH)
 
-  cat > $SYSTEMD_SERVICE_PATH << EOF
+  cat > $CARDANO_NODE_SERVICE_PATH << EOF
 [Unit]
 Description=Cardano Node
 Requires=network.target
@@ -252,11 +261,95 @@ get_blockfrost_archive_name() {
   echo $archive
 }
 
-install_blockfrost() {
-  archive=$(get_blockfrost_archive_name)
-  download_path=$HOME/$archive
-  base_url="https://github.com/blockfrost/blockfrost-platform/releases/download/0.0.2"
-  wget -O "${download_path}" "$base_url/$archive"
+get_blockfrost_bin_dir() {
+  echo "$HOME/blockfrost-platform/bin"
+}
 
-  tar -xjf "$download_path"
+get_blockfrost_bin_path() {
+  echo "$(get_blockfrost_path)/blockfrost-platform"
+}
+
+create_blockfrost_config() {
+  network_name=$1
+
+  public_ip=$(get_public_ip)
+  bin_path=$(get_blockfrost_bin_path)
+
+  $bin_path --init --server-address $public_ip --server-port $BLOCKFROST_PORT --network $network_name --node-socket-path $SOCKET_PATH --solitary --no-metrics
+}
+
+create_start_blockfrost_script() {
+  echo "Creating ${START_BLOCKFROST_SCRIPT_PATH}..."
+
+  public_ip=$(get_public_ip)
+  bin_path=$(get_blockfrost_bin_path)
+
+  mkdir -p $(dirname $START_BLOCKFROST_SCRIPT_PATH)
+
+  cat > $START_BLOCKFROST_SCRIPT_PATH << END
+#!/bin/bash
+$bin_path --config $BLOCKFROST_CONFIG --solitary
+END
+
+  chmod +x $START_BLOCKFROST_SCRIPT_PATH || exit 1
+
+  echo "Created ${START_BLOCKFROST_SCRIPT_PATH}"
+}
+
+create_blockfrost_service() {
+  mkdir -p $(dirname $BLOCKFROST_SERVICE_PATH)
+
+  cat > $BLOCKFROST_SERVICE_PATH << EOF
+[Unit]
+Description=Blockfrost
+Requires=cardano-node.service
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=60
+User=$USER
+Group=1000
+WorkingDirectory=$HOME
+ExecStart=$START_BLOCKFROST_SCRIPT_PATH
+KillSignal=SIGINT
+RestartKillSignal=SIGINT
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=blockfrost
+LimitNOFILE=32768
+
+[Install]
+WantedBy=multi-user.target
+EOF
+}
+
+start_blockfrost_service() {
+  echo "Starting blockfrost service..."
+  create_blockfrost_service
+
+  systemctl enable blockfrost
+  systemctl start blockfrost
+
+  echo "Started blockfrost service"
+}
+
+install_blockfrost() {
+  network_name=$1
+
+  archive=$(get_blockfrost_archive_name)
+
+  download_path=$HOME/$archive
+
+  base_url="https://github.com/blockfrost/blockfrost-platform/releases/download/0.0.2"
+
+  wget -O "${download_path}" "$base_url/$archive" || exit 1
+
+  tar -xjf "$download_path" || exit 1
+
+  add_to_path $(get_blockfrost_bin_dir) || exit 1
+
+  create_blockfrost_config $network_name || exit 1
+
+  create_start_blockfrost_script || exit 1
 }
