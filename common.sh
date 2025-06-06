@@ -1,4 +1,6 @@
-if [[ -z "$NETWORK_NAME" ]]; then
+if [[ -z "$NETWORK_NAME" ]]
+then
+    env
     echo "Must provide NETWORK_NAME in environment" 1>&2
     exit 1
 fi
