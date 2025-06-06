@@ -1,3 +1,8 @@
+if [[ -z "$NETWORK_NAME" ]]; then
+    echo "Must provide NETWORK_NAME in environment" 1>&2
+    exit 1
+fi
+
 CARDANO_NODE_REPO="https://github.com/IntersectMBO/cardano-node"
 CARDANO_NODE_VERSION="10.4.1"
 CARDANO_NODE_PORT=3001
@@ -68,32 +73,28 @@ install_cardano_cli() {
 }
 
 get_magic_number() {
-  network_name=$1
-
-  if [[ $network_name == "mainnet" ]]
+  if [[ $NETWORK_NAME == "mainnet" ]]
   then
     echo "764824073"
-  elif [[ $network_name == "preprod" ]]
+  elif [[ $NETWORK_NAME == "preprod" ]]
   then
     echo "1"
   else
-    echo "unhandled network name $network_name"
+    echo "unhandled network name $NETWORK_NAME"
     exit 1
   fi
 }
 
 download_network_config() {
-  network_name=$1
-
-  echo "Downloading network config for ${network_name}..."
+  echo "Downloading network config for ${NETWORK_NAME}..."
 
   mkdir -p $CONFIG_DIR
 
   cd $CONFIG_DIR
 
-  curl -O -J "https://book.play.dev.cardano.org/environments/$network_name/{config,db-sync-config,submit-api-config,topology,byron-genesis,shelley-genesis,alonzo-genesis,conway-genesis,checkpoints}.json"
+  curl -O -J "https://book.play.dev.cardano.org/environments/$NETWORK_NAME/{config,db-sync-config,submit-api-config,topology,byron-genesis,shelley-genesis,alonzo-genesis,conway-genesis,checkpoints}.json"
 
-  echo "Downloaded network config for ${network_name}"
+  echo "Downloaded network config for ${NETWORK_NAME}"
 }
 
 get_public_ip() {
@@ -127,26 +128,22 @@ END
 }
 
 get_cli_network_flag() {
-  network_name=$1
-
-  if [[ $network_name == "mainnet" ]]
+  if [[ $NETWORK_NAME == "mainnet" ]]
   then
     echo "--mainnet"
-  elif [[ $network_name == "preprod" ]]
+  elif [[ $NETWORK_NAME == "preprod" ]]
   then
     echo "--testnet-magic 1"
   else
-    echo "unhandled network name $network_name"
+    echo "unhandled network name $NETWORK_NAME"
     exit 1
   fi
 }
 
 create_tip_script() {
-  network_name=$1
-
   echo "Creating ${TIP_SCRIPT_PATH}..."
 
-  network_flag=$(get_cli_network_flag $network_name)
+  network_flag=$(get_cli_network_flag $NETWORK_NAME)
   bin_path=$(get_cardano_cli_path)
 
   mkdir -p $(dirname $TIP_SCRIPT_PATH)
@@ -200,8 +197,6 @@ start_cardano_node_service() {
 }
 
 install_cardano_node_and_cli() {
-  network_name=$1
-
   install_build_deps || exit 1
 
   clone_cardano_node_source || exit 1
@@ -210,11 +205,11 @@ install_cardano_node_and_cli() {
 
   install_cardano_cli || exit 1
 
-  download_network_config $network_name || exit 1
+  download_network_config || exit 1
 
   create_start_script || exit 1
 
-  create_tip_script $network_name || exit 1
+  create_tip_script || exit 1
 
   start_cardano_node_service || exit 1
 }
@@ -266,16 +261,7 @@ get_blockfrost_bin_dir() {
 }
 
 get_blockfrost_bin_path() {
-  echo "$(get_blockfrost_path)/blockfrost-platform"
-}
-
-create_blockfrost_config() {
-  network_name=$1
-
-  public_ip=$(get_public_ip)
-  bin_path=$(get_blockfrost_bin_path)
-
-  $bin_path --init --server-address $public_ip --server-port $BLOCKFROST_PORT --network $network_name --node-socket-path $SOCKET_PATH --solitary --no-metrics
+  echo "$(get_blockfrost_bin_dir)/blockfrost-platform"
 }
 
 create_start_blockfrost_script() {
@@ -288,7 +274,7 @@ create_start_blockfrost_script() {
 
   cat > $START_BLOCKFROST_SCRIPT_PATH << END
 #!/bin/bash
-$bin_path --config $BLOCKFROST_CONFIG --solitary
+$bin_path --solitary --server-address $public_ip --server-port $BLOCKFROST_PORT --network $NETWORK_NAME --node-socket-path $SOCKET_PATH --solitary --mode full
 END
 
   chmod +x $START_BLOCKFROST_SCRIPT_PATH || exit 1
@@ -302,7 +288,7 @@ create_blockfrost_service() {
   cat > $BLOCKFROST_SERVICE_PATH << EOF
 [Unit]
 Description=Blockfrost
-Requires=cardano-node.service
+After=cardano-node.service
 
 [Service]
 Type=simple
@@ -335,8 +321,6 @@ start_blockfrost_service() {
 }
 
 install_blockfrost() {
-  network_name=$1
-
   archive=$(get_blockfrost_archive_name)
 
   download_path=$HOME/$archive
@@ -348,8 +332,6 @@ install_blockfrost() {
   tar -xjf "$download_path" || exit 1
 
   add_to_path $(get_blockfrost_bin_dir) || exit 1
-
-  create_blockfrost_config $network_name || exit 1
 
   create_start_blockfrost_script || exit 1
 }
