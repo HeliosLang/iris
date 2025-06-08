@@ -372,9 +372,9 @@ END
 }
 
 create_cardano_db_sync_service() {
-  mkdir -p $(dirname $START_CARDANO_DB_SYNC_SCRIPT_PATH)
+  mkdir -p $(dirname $CARDANO_DB_SYNC_SERVICE_PATH)
 
-  cat > $START_CARDANO_DB_SYNC_SCRIPT_PATH << EOF
+  cat > $CARDANO_DB_SYNC_SERVICE_PATH << EOF
 [Unit]
 Description=Cardano DB Sync
 After=cardano-node.service
@@ -400,7 +400,7 @@ EOF
 }
 
 start_cardano_db_sync_service() {
-  echo "Starting blockfrost service..."
+  echo "Starting cardano-db-sync service..."
   create_cardano_db_sync_service
 
   systemctl enable cardano-db-sync
@@ -415,15 +415,15 @@ install_cardano_db_sync() {
   if [ ! -d $CARDANO_DB_SYNC_SRC_DIR ]
   then
     git clone https://github.com/IntersectMBO/cardano-db-sync.git $CARDANO_DB_SYNC_SRC_DIR
-  
+
     cd $CARDANO_DB_SYNC_SRC_DIR
-  
+
     git fetch --all --tags 
-  
+
     git checkout tags/$CARDANO_DB_SYNC_VERSION
-  
+
     yes | nix_build .
-  
+
     install_cardano_binary "cardano-db-sync" || exit 1
   fi
 
