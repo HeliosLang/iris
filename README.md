@@ -19,28 +19,28 @@ Run any of the following commands to install cardano-node along with
 
 ```bash
 export NETWORK_NAME=preprod
-curl -fsSL https://raw.githubusercontent.com/HeliosLang/cardano-node-install/refs/heads/main/install-cardano-node.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/HeliosLang/cardano-node-install/refs/heads/main/install-cardano-node.sh | sudo -E bash
 ```
 
 ### Preprod `blockfrost`
 
 ```bash
 export NETWORK_NAME=preprod
-curl -fsSL https://raw.githubusercontent.com/HeliosLang/cardano-node-install/refs/heads/main/install-blockfrost.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/HeliosLang/cardano-node-install/refs/heads/main/install-blockfrost.sh | sudo -E bash
 ```
 
 ### Mainnet `cardano-node`
 
 ```bash
 export NETWORK_NAME=mainnet
-curl -fsSL https://raw.githubusercontent.com/HeliosLang/cardano-node-install/refs/heads/main/install-cardano-node.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/HeliosLang/cardano-node-install/refs/heads/main/install-cardano-node.sh | sudo -E bash
 ```
 
 ### Preprod `blockfrost`
 
 ```bash
 export NETWORK_NAME=mainnet
-curl -fsSL https://raw.githubusercontent.com/HeliosLang/cardano-node-install/refs/heads/main/install-blockfrost.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/HeliosLang/cardano-node-install/refs/heads/main/install-blockfrost.sh | sudo -E bash
 ```
 
 ## Contributing

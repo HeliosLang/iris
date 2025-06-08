@@ -7,20 +7,24 @@ fi
 
 CARDANO_NODE_REPO="https://github.com/IntersectMBO/cardano-node"
 CARDANO_NODE_VERSION="10.4.1"
+CARDANO_DB_SYNC_VERSION="13.6.0.5"
 CARDANO_NODE_PORT=3001
 BLOCKFROST_PORT=3000
 USER=$SUDO_USER
 HOME=/home/$USER
 CARDANO_NODE_SRC_DIR=$HOME/cardano-node-source
+CARDANO_DB_SYNC_SRC_DIR=$HOME/cardano-db-sync-source
 DB_PATH="$HOME/db"
 SOCKET_PATH="$DB_PATH/node.socket"
 CONFIG_DIR="$HOME/cardano-node-config"
 SCRIPTS_DIR="$HOME/scripts"
 START_SCRIPT_PATH="$SCRIPTS_DIR/start.sh"
 START_BLOCKFROST_SCRIPT_PATH="$SCRIPTS_DIR/start_blockfrost.sh"
+START_CARDANO_DB_SYNC_SCRIPT_PATH="$SCRIPTS_DIR/start_db_sync.sh"
 TIP_SCRIPT_PATH="$SCRIPTS_DIR/tip.sh"
 CARDANO_NODE_SERVICE_PATH="/etc/systemd/system/cardano-node.service"
 BLOCKFROST_SERVICE_PATH="/etc/systemd/system/blockfrost.service"
+CARDANO_DB_SYNC_SERVICE_PATH="/etc/systemd/system/cardano-db-sync.service"
 
 install_build_deps() {
   apt-get -y install git nix
@@ -47,7 +51,7 @@ nix_build() {
 add_to_path() {
   p=$1
 
-  echo "export \$PATH=\$PATH:$p" >> $HOME/.bashrc
+  echo "export PATH=\$PATH:$p" >> $HOME/.bashrc
 }
 
 install_cardano_binary() {
@@ -109,6 +113,10 @@ get_cardano_node_path() {
 
 get_cardano_cli_path() {
   echo "$(get_nix_store_dir "cardano-cli")/cardano-cli"
+}
+
+get_cardano_db_sync_path() {
+  echo "$(get_nix_store_dir "cardano-db-sync")/cardano-db-sync"
 }
 
 create_start_script() {
@@ -276,7 +284,7 @@ create_start_blockfrost_script() {
 
   cat > $START_BLOCKFROST_SCRIPT_PATH << END
 #!/bin/bash
-$bin_path --solitary --server-address $public_ip --server-port $BLOCKFROST_PORT --network $NETWORK_NAME --node-socket-path $SOCKET_PATH --solitary --mode full
+$bin_path --solitary --server-address $public_ip --server-port $BLOCKFROST_PORT --network $NETWORK_NAME --node-socket-path $SOCKET_PATH --mode full
 END
 
   chmod +x $START_BLOCKFROST_SCRIPT_PATH || exit 1
@@ -336,4 +344,97 @@ install_blockfrost() {
   add_to_path $(get_blockfrost_bin_dir) || exit 1
 
   create_start_blockfrost_script || exit 1
+
+  start_blockfrost_service || exit 1
+}
+
+install_postgresql() {
+  # TODO: search for the latest available version first
+  apt-get -y install postgresql-15
+}
+
+create_start_cardano_db_sync_script() {
+  echo "Creating ${START_CARDANO_DB_SYNC_SCRIPT_PATH}..."
+
+  bin_path=$(get_cardano_db_sync_bin_path)
+
+  mkdir -p $(dirname $START_CARDANO_DB_SYNC_SCRIPT_PATH)
+
+  cat > $START_CARDANO_DB_SYNC_SCRIPT_PATH << END
+#!/bin/bash
+export PGPASSFILE=$CARDANO_DB_SYNC_SRC_DIR/config/pgpass-mainnet
+$bin_path --config $CONFIG_DIR/db-sync-config.json --socket-path $SOCKET_PATH --state-dir $DB_PATH/ledger --schema-dir $CARDANO_DB_SYNC_SRC_DIR/schema
+END
+
+  chmod +x $START_CARDANO_DB_SYNC_SCRIPT_PATH || exit 1
+
+  echo "Created ${START_CARDANO_DB_SYNC_SCRIPT_PATH}"
+}
+
+create_cardano_db_sync_service() {
+  mkdir -p $(dirname $START_CARDANO_DB_SYNC_SCRIPT_PATH)
+
+  cat > $START_CARDANO_DB_SYNC_SCRIPT_PATH << EOF
+[Unit]
+Description=Cardano DB Sync
+After=cardano-node.service
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=60
+User=$USER
+Group=1000
+WorkingDirectory=$HOME
+ExecStart=$START_CARDANO_DB_SYNC_SCRIPT_PATH
+KillSignal=SIGINT
+RestartKillSignal=SIGINT
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cardano_db_sync
+LimitNOFILE=32768
+
+[Install]
+WantedBy=multi-user.target
+EOF
+}
+
+start_cardano_db_sync_service() {
+  echo "Starting blockfrost service..."
+  create_cardano_db_sync_service
+
+  systemctl enable cardano-db-sync
+  systemctl start cardano-db-sync
+
+  echo "Started cardano-db-sync service"
+}
+
+install_cardano_db_sync() {
+  install_postgresql || exit 1
+
+  git clone https://github.com/IntersectMBO/cardano-db-sync.git $CARDANO_DB_SYNC_SRC_DIR
+
+  cd $CARDANO_DB_SYNC_SRC_DIR
+
+  git fetch --all --tags 
+
+  git checkout tags/$CARDANO_DB_SYNC_VERSION
+
+  yes | nix_build .
+
+  install_cardano_binary "cardano-db-sync" || exit 1
+
+  # all the config files should've already been downloaded by now
+  cd $HOME
+  export PGPASSFILE="${CARDANO_DB_SYNC_SRC_DIR}/config/pgpass-mainnet"
+
+  # add the current user as a db role (password doesn't seem to matter?)
+  sudo -u postgres psql -c "CREATE USER $USER WITH SUPERUSER PASSWORD '12345678'"
+
+  # create the database
+  sudo -u postgres -E ${CARDANO_DB_SYNC_SRC_DIR}/scripts/postgresql-setup.sh --createdb
+
+  create_start_cardano_db_sync_script || exit 1
+
+  start_cardano_db_sync_service || exit 1
 }
