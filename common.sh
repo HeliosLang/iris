@@ -356,7 +356,7 @@ install_postgresql() {
 create_start_cardano_db_sync_script() {
   echo "Creating ${START_CARDANO_DB_SYNC_SCRIPT_PATH}..."
 
-  bin_path=$(get_cardano_db_sync_bin_path)
+  bin_path=$(get_cardano_db_sync_path)
 
   mkdir -p $(dirname $START_CARDANO_DB_SYNC_SCRIPT_PATH)
 
@@ -412,17 +412,20 @@ start_cardano_db_sync_service() {
 install_cardano_db_sync() {
   install_postgresql || exit 1
 
-  git clone https://github.com/IntersectMBO/cardano-db-sync.git $CARDANO_DB_SYNC_SRC_DIR
-
-  cd $CARDANO_DB_SYNC_SRC_DIR
-
-  git fetch --all --tags 
-
-  git checkout tags/$CARDANO_DB_SYNC_VERSION
-
-  yes | nix_build .
-
-  install_cardano_binary "cardano-db-sync" || exit 1
+  if [ ! -d $CARDANO_DB_SYNC_SRC_DIR ]
+  then
+    git clone https://github.com/IntersectMBO/cardano-db-sync.git $CARDANO_DB_SYNC_SRC_DIR
+  
+    cd $CARDANO_DB_SYNC_SRC_DIR
+  
+    git fetch --all --tags 
+  
+    git checkout tags/$CARDANO_DB_SYNC_VERSION
+  
+    yes | nix_build .
+  
+    install_cardano_binary "cardano-db-sync" || exit 1
+  fi
 
   # all the config files should've already been downloaded by now
   cd $HOME
