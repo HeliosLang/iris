@@ -1,0 +1,30 @@
+{
+  "name": "cardano-node-install",
+  "version": "0.1.0",
+  "description": "Cardano Node install tool",
+  "type": "module",
+  "scripts": {
+    "build": "pnpm build:frontend && pnpm build:backend && pnpm build:package",
+    "build:backend": "go generate ./src/backend/ && go build -o ./tmp/cardano-node-ctl ./src/backend/main.go ./src/backend/api.go ./src/backend/assets_gen.go ./src/backend/db.go",
+    "build:frontend": "vite build",
+    "build:package": "pnpm build:package:deb",
+    "build:package:deb": "./build-deb-package.sh",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/react": "^19.1.6",
+    "@types/react-dom": "^19.1.6",
+    "@vitejs/plugin-react": "^4.5.1",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5"
+  },
+  "dependencies": {
+    "babel-plugin-styled-components": "^2.1.4",
+    "vite-plugin-static-copy": "^3.0.0"
+  }
+}

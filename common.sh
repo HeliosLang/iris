@@ -432,7 +432,7 @@ install_cardano_db_sync() {
   export PGPASSFILE="${CARDANO_DB_SYNC_SRC_DIR}/config/pgpass-mainnet"
 
   # add the current user as a db role (password doesn't seem to matter?)
-  sudo -u postgres psql -c "CREATE USER $USER WITH SUPERUSER PASSWORD '12345678'"
+  sudo -u postgres psql -c "CREATE USER $USER WITH SUPERUSER PASSWORD NULL"
 
   # create the database
   sudo -u postgres -E ${CARDANO_DB_SYNC_SRC_DIR}/scripts/postgresql-setup.sh --createdb
