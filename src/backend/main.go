@@ -55,10 +55,15 @@ func serve(cmd *cobra.Command, args []string) error {
 }
 
 func serveHTTP(cmd *cobra.Command, args []string, networkName string) error {
+	handler, err := NewHandler(networkName)
+	if err != nil {
+		return err
+	}
+	
 	// Start HTTP server
 	server := &http.Server{
 		Addr:      ":80",
-		Handler:   NewHandler(networkName),
+		Handler: handler,
 	}
 
 	log.Println("HTTP server listening on port 80")
@@ -71,6 +76,11 @@ func serveHTTP(cmd *cobra.Command, args []string, networkName string) error {
 }
 
 func serveHTTPS(cmd *cobra.Command, args []string, networkName string) error {
+	handler, err := NewHandler(networkName)
+	if err != nil {
+		return err
+	}
+
 	// Create autocert manager with a custom HostPolicy
 	certManager := &autocert.Manager{
 		Prompt: autocert.AcceptTOS,
@@ -83,7 +93,7 @@ func serveHTTPS(cmd *cobra.Command, args []string, networkName string) error {
 			}
 		},
 	}
-
+	
 	// Start HTTP server for Let's Encrypt challenge response
 	go func() {
 		httpServer := &http.Server{
@@ -107,7 +117,7 @@ func serveHTTPS(cmd *cobra.Command, args []string, networkName string) error {
 	// Start HTTPS server
 	httpsServer := &http.Server{
 		Addr:      ":443",
-		Handler:   NewHandler(networkName),
+		Handler: handler,
 		TLSConfig: tlsConfig,
 	}
 

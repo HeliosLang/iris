@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const (
@@ -45,8 +46,9 @@ func main() {
 		}
 
 		content := string(contentBytes)
+		name := strings.TrimSuffix(relPath, filepath.Ext(relPath))
 
-		buffer.WriteString(fmt.Sprintf("\t\"/%s\": `%s`,\n", relPath, content))
+		buffer.WriteString(fmt.Sprintf("\t\"%s\": `%s`,\n", name, content))
 
 		return nil
 	})

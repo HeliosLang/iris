@@ -5,6 +5,6 @@ const root = document.getElementById("root") as HTMLElement
 
 createRoot(root).render(
     <StrictMode>
-        Hello world
+        This server is running the Helios Gateway for Cardano
     </StrictMode>
 )
