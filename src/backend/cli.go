@@ -8,6 +8,7 @@ import (
 	"log"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 type CardanoCLI struct {
@@ -19,7 +20,7 @@ func NewCardanoCLI(networkName string) *CardanoCLI {
 		log.Fatalf("Unhandled network name %s", networkName)
 		return nil
 	}
-	
+
 	return &CardanoCLI{networkName}
 }
 
@@ -44,69 +45,69 @@ func (c *CardanoCLI) AddressUTXOs(address string) ([]byte, error) {
 }
 
 type CardanoCLIParameters struct {
-	CollateralPercentage int `json:"collateralPercentage"`
+	CollateralPercentage   int `json:"collateralPercentage"`
 	CommitteeMaxTermLength int `json:"committeeMaxTermLength"`
-	CommitteeMinSize int `json:"committeeMinSize"`
-	CostModels struct{
+	CommitteeMinSize       int `json:"committeeMinSize"`
+	CostModels             struct {
 		PlutusV1 []int `json:"PlutusV1"`
 		PlutusV2 []int `json:"PlutusV2"`
 		PlutusV3 []int `json:"PlutusV3"`
 	} `json:"costModels"`
-	DRepActivity int `json:"dRepActivity"`
-	DRepDeposit int64 `json:"dRepDeposit"`
+	DRepActivity         int   `json:"dRepActivity"`
+	DRepDeposit          int64 `json:"dRepDeposit"`
 	DRepVotingThresholds struct {
 		CommitteeNoConfidence float64 `json:"committeeNoConfidence"`
-		CommitteeNormal float64 `json:"committeeNormal"`
-		HardForkInitiation float64 `json:"hardForkInitiation"`
-		MotionNoConfidence float64 `json:"motionNoConfidence"`
-		PPEconomicGroup float64 `json:"ppEconomicGroup"`
-		PPGovGroup float64 `json:"ppGovGroup"`
-		PPTechnicalGroup float64 `json:"ppTechnicalGroup"`
-		TreasuryWithdrawal float64 `json:"treasuryWithdrawal"`
-		UpdateToConstitution float64 `json:"updateToConstitution"`
+		CommitteeNormal       float64 `json:"committeeNormal"`
+		HardForkInitiation    float64 `json:"hardForkInitiation"`
+		MotionNoConfidence    float64 `json:"motionNoConfidence"`
+		PPEconomicGroup       float64 `json:"ppEconomicGroup"`
+		PPGovGroup            float64 `json:"ppGovGroup"`
+		PPTechnicalGroup      float64 `json:"ppTechnicalGroup"`
+		TreasuryWithdrawal    float64 `json:"treasuryWithdrawal"`
+		UpdateToConstitution  float64 `json:"updateToConstitution"`
 	} `json:"dRepVotingThresholds"`
 	ExecutionUnitPrices struct {
 		PriceMemory float64 `json:"priceMemory"`
-		PriceSteps float64 `json:"priceSteps"`
+		PriceSteps  float64 `json:"priceSteps"`
 	} `json:"executionUnitPrices"`
-	GovActionDeposit int64 `json:"govActionDeposit"`
-	GovActionLifetime int `json:"govActionLifeTime"`
-	MaxBlockBodySize int `json:"maxBlockBodySize"`
+	GovActionDeposit       int64 `json:"govActionDeposit"`
+	GovActionLifetime      int   `json:"govActionLifeTime"`
+	MaxBlockBodySize       int   `json:"maxBlockBodySize"`
 	MaxBlockExecutionUnits struct {
 		Memory int64 `json:"memory"`
-		Steps int64 `json:"steps"`
+		Steps  int64 `json:"steps"`
 	} `json:"maxBlockExecutionUnits"`
-	MaxBlockHeaderSize int `json:"maxBlockHeaderSize"`
+	MaxBlockHeaderSize  int `json:"maxBlockHeaderSize"`
 	MaxCollateralInputs int `json:"maxCollateralInputs"`
 	MaxTxExecutionUnits struct {
 		Memory int64 `json:"memory"`
-		Steps int64 `json:"steps"`
+		Steps  int64 `json:"steps"`
 	} `json:"maxTxExecutionUnits"`
-	MaxTxSize int `json:"maxTxSize"`
-	MaxValueSize int `json:"maxValueSize"`
-	MinFeeRefScriptCostPerByte int `json:"minFeeRefScriptCostPerByte"`
-	MinPoolCost int64 `json:"minPoolCost"`
-	MonetaryExpansion float64 `json:"monetaryExpansion"`
-	PoolPledgeInfluence float64 `json:"poolPledgeInfluence"`
-	PoolRetireMaxEpoch int `json:"poolRetireMaxEpoch"`
-	PoolVotingThresholds struct {
+	MaxTxSize                  int     `json:"maxTxSize"`
+	MaxValueSize               int     `json:"maxValueSize"`
+	MinFeeRefScriptCostPerByte int     `json:"minFeeRefScriptCostPerByte"`
+	MinPoolCost                int64   `json:"minPoolCost"`
+	MonetaryExpansion          float64 `json:"monetaryExpansion"`
+	PoolPledgeInfluence        float64 `json:"poolPledgeInfluence"`
+	PoolRetireMaxEpoch         int     `json:"poolRetireMaxEpoch"`
+	PoolVotingThresholds       struct {
 		CommitteeNoConfidence float64 `json:"committeeNoConfidence"`
-		CommitteeNormal float64 `json:"committeeNormal"`
-		HardForkInitiation float64 `json:"hardForkInitiation"`
-		MotionNoConfidence float64 `json:"motionNoConfidence"`
-		PPSecurityGroup float64 `json:"ppSecurityGroup"`
+		CommitteeNormal       float64 `json:"committeeNormal"`
+		HardForkInitiation    float64 `json:"hardForkInitiation"`
+		MotionNoConfidence    float64 `json:"motionNoConfidence"`
+		PPSecurityGroup       float64 `json:"ppSecurityGroup"`
 	} `json:"poolVotingThresholds"`
 	ProtocolVersion struct {
 		Major int `json:"major"`
 		Minor int `json:"minor"`
 	} `json:"protocolVersion"`
-	StakeAddressDeposit int64 `json:"stakeAddressDeposit"`
-	StakePoolDeposit int64 `json:"stakePoolDeposit"`
-	StakePoolTargetNum int `json:"stakePoolTargetNum"`
-	TreasuryCut float64 `json:"treasuryCut"`
-	TxFeeFixed int `json:"txFeeFixed"`
-	TxFeePerByte int `json:"txFeePerByte"`
-	UTXOCostPerByte int `json:"utxoCostPerByte"`
+	StakeAddressDeposit int64   `json:"stakeAddressDeposit"`
+	StakePoolDeposit    int64   `json:"stakePoolDeposit"`
+	StakePoolTargetNum  int     `json:"stakePoolTargetNum"`
+	TreasuryCut         float64 `json:"treasuryCut"`
+	TxFeeFixed          int     `json:"txFeeFixed"`
+	TxFeePerByte        int     `json:"txFeePerByte"`
+	UTXOCostPerByte     int     `json:"utxoCostPerByte"`
 }
 
 func (c *CardanoCLI) Parameters() (CardanoCLIParameters, error) {
@@ -129,19 +130,19 @@ func (c *CardanoCLI) Parameters() (CardanoCLIParameters, error) {
 func (c *CardanoCLI) SubmitTx(txPath string) (string, error) {
 	return c.invoke(
 		"latest", "transaction", "submit",
-		"--tx-file", txPath,		
+		"--tx-file", txPath,
 	)
 }
 
 type CardanoCLITip struct {
-	Block int `json:"block"`
-	Epoch int `json:"epoch"`
-	Era string `json:"era"`
-	Hash string `json:"hash"`
-	Slot uint64 `json:"slot"`
-	SlotInEpoch int `json:"slotInEpoch"`
-	SlotsToEpochEnd int `json:"slotsToEpochEnd"`
-	SyncProgress string `json:"syncProgress"`
+	Block           int    `json:"block"`
+	Epoch           int    `json:"epoch"`
+	Era             string `json:"era"`
+	Hash            string `json:"hash"`
+	Slot            uint64 `json:"slot"`
+	SlotInEpoch     int    `json:"slotInEpoch"`
+	SlotsToEpochEnd int    `json:"slotsToEpochEnd"`
+	SyncProgress    string `json:"syncProgress"`
 }
 
 func (c *CardanoCLI) Tip() (CardanoCLITip, error) {
@@ -161,6 +162,40 @@ func (c *CardanoCLI) Tip() (CardanoCLITip, error) {
 	return tip, nil
 }
 
+func (c *CardanoCLI) DeriveParameters() (HeliosNetworkParams, error) {
+	params, err := c.Parameters()
+	if err != nil {
+		return HeliosNetworkParams{}, err
+	}
+
+	tip, err := c.Tip()
+	if err != nil {
+		return HeliosNetworkParams{}, err
+	}
+
+	heliosParams := HeliosNetworkParams{
+		CollateralPercentage: params.CollateralPercentage,
+		CostModelParamsV1:    params.CostModels.PlutusV1,
+		CostModelParamsV2:    params.CostModels.PlutusV2,
+		CostModelParamsV3:    params.CostModels.PlutusV3,
+		ExCPUFeePerUnit:      params.ExecutionUnitPrices.PriceSteps,
+		ExMemFeePerUnit:      params.ExecutionUnitPrices.PriceMemory,
+		MaxCollateralInputs:  params.MaxCollateralInputs,
+		MaxTxExCPU:           params.MaxTxExecutionUnits.Steps,
+		MaxTxExMem:           params.MaxTxExecutionUnits.Memory,
+		RefScriptsFeePerByte: params.MinFeeRefScriptCostPerByte,
+		RefTipSlot:           int64(tip.Slot),
+		RefTipTime:           time.Now().UnixMilli(),
+		SecondsPerSlot:       1,
+		StakeAddrDeposit:     params.StakeAddressDeposit,
+		TxFeeFixed:           params.TxFeeFixed,
+		TxFeePerByte:         params.TxFeePerByte,
+		UTXODepositPerByte:   params.UTXOCostPerByte,
+	}
+
+	return heliosParams, nil
+}
+
 func (c *CardanoCLI) UTXO(txID string, utxoIndex int) ([]byte, error) {
 	cborHex, err := c.invoke(
 		"query", "utxo",
@@ -170,7 +205,7 @@ func (c *CardanoCLI) UTXO(txID string, utxoIndex int) ([]byte, error) {
 
 	if err != nil {
 		return nil, err
-	} else if (cborHex == "a0") {
+	} else if cborHex == "a0" {
 		// The route handler can use the postgres table to determine if UTXO was spent or not
 		return nil, nil
 	}
@@ -179,7 +214,6 @@ func (c *CardanoCLI) UTXO(txID string, utxoIndex int) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-
 
 	return cbor, nil
 }
@@ -190,14 +224,14 @@ func (c *CardanoCLI) invoke(args ...string) (string, error) {
 	} else {
 		args = append(args, "--testnet-magic", "1")
 	}
-	
+
 	args = append(args, "--socket-path", "/run/cardano-node/node.socket")
 
 	cmd := exec.Command("cardano-cli", args...)
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	
+
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
