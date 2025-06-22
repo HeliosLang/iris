@@ -117,7 +117,7 @@ func LoadImmStore(dir string) (*ImmStore, error) {
 
 		id, err := extractChunkID(path)
 		if err != nil {
-			log.Printf(fmt.Sprintf("%v", err))
+			log.Printf("%v", err)
 			return nil
 		}
 
@@ -127,7 +127,7 @@ func LoadImmStore(dir string) (*ImmStore, error) {
 		case ".secondary":
 			chunk, err := loadImmChunk(path)
 			if err != nil {
-				log.Printf(fmt.Sprintf("failed to read immutable chunk %d: %v", id, err))
+				log.Printf("failed to read immutable chunk %d: %v", id, err)
 				return nil
 			}
 
@@ -513,7 +513,7 @@ func (s *ImmStore) block(blockID string) (ledger.Block, error) {
 	}
 
 	if nDecoded != n {
-		log.Printf("decoded %d bytes, but block is only %d bytes", )
+		log.Printf("decoded %d bytes, but block is only %d bytes", nDecoded, n)
 	}
 
 	return b, nil
