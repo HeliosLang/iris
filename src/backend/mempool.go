@@ -43,6 +43,9 @@ func (m *Mempool) AddTx(tx ledger.Transaction, ttl time.Time) {
 
 // Returns nil if not found
 func (m *Mempool) GetTx(txID string) ledger.Transaction {
+	if m == nil {
+		return nil
+	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 

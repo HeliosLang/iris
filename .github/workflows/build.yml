@@ -38,7 +38,7 @@ jobs:
       - name: Write version to dist/latest
         run: node -e "const fs=require('fs'); const v=require('./package.json').version; fs.mkdirSync('dist',{recursive:true}); fs.writeFileSync('dist/latest', v);"
       - run: pnpm test
-      - uses: actions/upload-pages-artifact@v2
+      - uses: actions/upload-pages-artifact@v3
         with:
           path: './dist'
   deploy:
@@ -50,4 +50,4 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v2
+        uses: actions/deploy-pages@v4
