@@ -22,8 +22,7 @@ jobs:
       HOST: ${{ secrets.INTEG_TEST_HOST }}
       USER: ${{ secrets.INTEG_TEST_USER }}
       WALLET: ${{ secrets.INTEG_TEST_WALLET }}
-      NODE_OPTIONS: --network-family-autoselection-attempt-timeout=500
-      NODE_DEBUG: net
+      NODE_OPTIONS: --network-family-autoselection-attempt-timeout=1000
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
