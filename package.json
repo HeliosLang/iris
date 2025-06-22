@@ -1,7 +1,7 @@
 {
-  "name": "cardano-node-install",
+  "name": "iris",
   "version": "0.1.0",
-  "description": "Cardano Node install tool",
+  "description": "Iris REST API for Cardano",
   "type": "module",
   "scripts": {
     "build": "pnpm build:frontend && pnpm build:backend && pnpm build:package",
@@ -9,12 +9,18 @@
     "build:frontend": "vite build",
     "build:package": "pnpm build:package:deb",
     "build:package:deb": "./build-deb-package.sh",
-    "test": "pnpm build:frontend && go generate ./src/backend/ && go test -v ./..."
+    "test": "pnpm build:frontend && go generate ./src/backend/ && go test -v ./...",
+    "test:integ": "node --test ./test-remote.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "@helios-lang/codec-utils": "^0.3.4",
+    "@helios-lang/ledger": "^0.7.12",
+    "@helios-lang/tx-utils": "^0.6.18",
+    "@helios-lang/type-utils": "^0.3.0",
+    "@helios-lang/uplc": "^0.7.17",
     "@types/react": "^19.1.6",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.5.1",

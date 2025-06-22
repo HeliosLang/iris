@@ -36,7 +36,7 @@ Version: $VERSION
 Architecture: all
 Maintainer: cschmitz398@gmail.com
 Depends: git, nix, postgresql
-Homepage: http://github.com/HeliosLang/cardano-node-install
+Homepage: http://github.com/HeliosLang/iris
 Description: A Cardano Node Control panel hosted via HTTPS.
 FILE
 
