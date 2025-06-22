@@ -26,8 +26,7 @@ import { expectDefined } from "@helios-lang/type-utils"
 /**
  * @type {string}
  */
-const host = `https://${expectDefined(process.env.HOST, "env var HOST not set")}`
-console.log(host)
+const host = "https://ns5037712.ip-148-113-219.net"; //`https://${expectDefined(process.env.HOST, "env var HOST not set")}`
 
 /**
  * @type {string}
