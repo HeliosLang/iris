@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	NetworkFile = "/etc/cardano-node-ctl/network"
+	NetworkFile = "/etc/cardano-iris/network"
 )
 
 var (
@@ -34,7 +34,7 @@ func main() {
 
 func makeCLI() *cobra.Command {
 	cli := &cobra.Command{
-		Use: "cardano-node-ctl",
+		Use: "cardano-iris",
 		Short: "Install and manage Cardano Node services",
 		RunE: serve,
 	}

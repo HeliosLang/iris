@@ -28,13 +28,13 @@ When building from source you will need the following dependencies:
    * `go` v1.24 or later
 
 ```sh
-git clone https://github.com/HeliosLang/cardano-node-ctl helios-gateway
-cd helios-gateway
+git clone https://github.com/HeliosLang/iris iris
+cd iris
 npm install
 npm run build
 ```
 
-Copy the `cardano-node-ctl-0.1.0.deb` package to the server you want to install this on, and run:
+Copy the `cardano-iris-0.1.0.deb` package to the server you want to install this on, and run:
 
 ```sh
 sudo dpkg -i cardano-iris-0.1.0.deb
