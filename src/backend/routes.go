@@ -371,7 +371,7 @@ func (h *Handler) parameters(w http.ResponseWriter, r *http.Request) {
 	h.paramsCache.mu.Lock()
 	defer h.paramsCache.mu.Unlock()
 
-	heliosParams, err := deriveParameters(h.cli)
+	heliosParams, err := h.cli.DeriveParameters()
 	if err != nil {
 		internalError(w, err)
 		return
@@ -399,40 +399,6 @@ func (h *Handler) parameters(w http.ResponseWriter, r *http.Request) {
 	if _, err := w.Write(encodedParams); err != nil {
 		http.Error(w, fmt.Sprintf("internal error: %v", err), http.StatusInternalServerError)
 	}
-}
-
-func deriveParameters(cli *CardanoCLI) (HeliosNetworkParams, error) {
-	params, err := cli.Parameters()
-	if err != nil {
-		return HeliosNetworkParams{}, err
-	}
-
-	tip, err := cli.Tip()
-	if err != nil {
-		return HeliosNetworkParams{}, err
-	}
-
-	heliosParams := HeliosNetworkParams{
-		CollateralPercentage: params.CollateralPercentage,
-		CostModelParamsV1:    params.CostModels.PlutusV1,
-		CostModelParamsV2:    params.CostModels.PlutusV2,
-		CostModelParamsV3:    params.CostModels.PlutusV3,
-		ExCPUFeePerUnit:      params.ExecutionUnitPrices.PriceSteps,
-		ExMemFeePerUnit:      params.ExecutionUnitPrices.PriceMemory,
-		MaxCollateralInputs:  params.MaxCollateralInputs,
-		MaxTxExCPU:           params.MaxTxExecutionUnits.Steps,
-		MaxTxExMem:           params.MaxTxExecutionUnits.Memory,
-		RefScriptsFeePerByte: params.MinFeeRefScriptCostPerByte,
-		RefTipSlot:           int64(tip.Slot),
-		RefTipTime:           time.Now().UnixMilli(),
-		SecondsPerSlot:       1,
-		StakeAddrDeposit:     params.StakeAddressDeposit,
-		TxFeeFixed:           params.TxFeeFixed,
-		TxFeePerByte:         params.TxFeePerByte,
-		UTXODepositPerByte:   params.UTXOCostPerByte,
-	}
-
-	return heliosParams, nil
 }
 
 func (h *Handler) policy(w http.ResponseWriter, r *http.Request, url URLHelper) {
