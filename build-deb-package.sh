@@ -123,6 +123,7 @@ mkdir -p /etc/cardano-db-sync/\$network
 # Create the db-sync-config.json file for cardano-db-sync,
 #  switch off tables that aren't really needed for typical DApps
 #  TODO: how to make sure Prometheus isn't running?
+#  TODO: change use_address_table to true of fresh deployment
 cat > /etc/cardano-db-sync/\$network/db-sync-config.json << EOF
 {
   "EnableFutureGenesis": true,
@@ -243,23 +244,23 @@ cat > /etc/cardano-db-sync/\$network/db-sync-config.json << EOF
     "tx_out": {
       "value": "consumed",
       "force_tx_in": false,
-      "use_address_table": true,
+      "use_address_table": false,
     },
-    "ledger": "disable",
+    "ledger": "enable",
     "shelley": {
-      "enable": false
+      "enable": true
     },
     "multi_asset": {
       "enable": true
     },
     "metadata": {
-      "enable": false
+      "enable": true
     },
     "plutus": {
-      "enable": false
+      "enable": true
     },
-    "governance": "disable",
-    "offchain_pool_data": "disable",
+    "governance": "enable",
+    "offchain_pool_data": "enable",
     "json_type": "text",
     "remove_jsonb_from_schema": "enable"
   }
@@ -384,7 +385,7 @@ cardano_db_count=\$(sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE 
 if test -z \$cardano_db_count; then
     echo "Creating Postgres database 'cardano_\$network'..."
     
-    sudo -u postgres psql -c "CREATE DATABASE cardano_\$network WITH TEMPLATE template0 OWNER cardano ENCODING UTF8" || exit 1
+    sudo -u postgres psql -c "CREATE DATABASE cardano_\$network WITH TEMPLATE template0 OWNER root ENCODING UTF8" || exit 1
     echo "Created Postgres database 'cardano_\$network'"
 fi
 
@@ -411,7 +412,7 @@ User=root
 Group=root
 WorkingDirectory=/var/cache/cardano-db-sync/\$network
 Environment="PGPASSFILE=/etc/cardano-db-sync/\$network/pgpass"
-ExecStart=\$binary --config /etc/cardano-db-sync/\$network/db-sync-config.json --socket-path /run/cardano-node/node.socket --schema-dir /etc/cardano-db-sync/schema
+ExecStart=\$binary --config /etc/cardano-db-sync/\$network/db-sync-config.json --socket-path /run/cardano-node/node.socket --state-dir /var/cache/cardano-node/preprod/ledger --schema-dir /etc/cardano-db-sync/schema
 KillSignal=SIGINT
 RestartKillSignal=SIGINT
 StandardOutput=journal

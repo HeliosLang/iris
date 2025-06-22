@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -61,6 +62,19 @@ func NewHandler(networkName string) (*Handler, error) {
 			}
 		}
 	}()
+
+	// wait 2 minutes to create the indices that speed up queries a lot
+	go func() {
+		for {
+			time.Sleep(120*time.Second)
+
+			if err := db.CreateIndices(); err != nil {
+				log.Printf("failed to create indices, retrying later (%v)", err)
+			} else {
+				break
+			}
+		}
+	}()
 	
 	return handler, nil
 }
@@ -98,6 +112,8 @@ func (h *Handler) api(w http.ResponseWriter, r *http.Request, url URLHelper) {
 		h.policy(w, r, url)
 	case "tx":
 		h.tx(w, r, url)
+	case "utxo":
+		h.utxo(w, r, url)
 	default:
 		invalidEndpoint(w, r)
 	}
@@ -145,15 +161,54 @@ func (h *Handler) addressUTXOs(w http.ResponseWriter, r *http.Request, addr stri
 		return
 	}
 
-	// TODO: more user friendly CBOR representation, instead of using encoded TxOutputIDs as map keys
-	cbor, err := h.cli.AddressUTXOs(addr)
-	if err != nil {
-		internalError(w, err)
+	var (
+		obj []UTXO
+		err error
+	)
+
+	filterByAsset, ok := r.URL.Query()["asset"]
+
+	if ok && len(filterByAsset) == 1 {
+		asset := filterByAsset[0]
+
+		obj, err = h.db.AddressUTXOsWithAsset(addr, asset, r.Context())
+		if err != nil {
+			internalError(w, err)
+			return
+		}
+	} else if ok && len(filterByAsset) != 1 {
+		http.Error(w, fmt.Sprintf("asset query parameter used %d times instead of once", len(filterByAsset)), http.StatusBadRequest)
 		return
+	} else {
+		obj, err = h.db.AddressUTXOs(addr, r.Context())
+		if err != nil {
+			internalError(w, err)
+			return
+		}
 	}
 
-	// TODO: better application/json representation
-	respondWithCBOR(w, r, cbor)
+	if r.Header.Get("Accept") != "application/cbor" {
+		respondWithJSON(w, obj)
+	} else {
+		entries := [][]byte{}
+
+		for _, utxo := range obj {
+			encodedUTXO, err := EncodeUTXO(utxo)
+			if err != nil {
+				internalError(w, err)
+				return
+			}
+
+			entries = append(
+				entries,
+				encodedUTXO,
+			)
+		}
+
+		cbor := EncodeList(entries)
+
+		respondWithCBOR(w, r, cbor)
+	}
 }
 
 
@@ -266,19 +321,73 @@ func (h *Handler) chainTip(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, tip)
 }
 
+type HeliosNetworkParams struct {
+	CollateralPercentage int `json:"collateralPercentage"`
+	CostModelParamsV1 []int `json:"costModelParamsV1"`
+	CostModelParamsV2 []int `json:"costModelParamsV2"`
+	CostModelParamsV3 []int `json:"costModelParamsV3"`
+	ExCPUFeePerUnit float64 `json:"exCpuFeePerUnit"`
+	ExMemFeePerUnit float64 `json:"exMemFeePerUnit"`
+	MaxCollateralInputs int `json:"maxCollateralInputs"`
+	MaxTxExCPU int64 `json:"maxTxExCpu"`
+	MaxTxExMem int64 `json:"maxTxExMem"`
+	RefScriptsFeePerByte int `json:"refScriptsFeePerByte"`
+	RefTipSlot int64 `json:"refTipSlot"`
+	RefTipTime  int64 `json:"refTipTime"`
+	SecondsPerSlot int `json:"secondsPerSlot"`
+	StakeAddrDeposit int64 `json:"stakeAddrDeposit"`
+	TxFeeFixed int `json:"txFeeFixed"`
+	TxFeePerByte int `json:"txFeePerByte"`
+	UTXODepositPerByte int `json:"utxoDepositPerByte"`
+}
+
 func (h *Handler) parameters(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" {
 		invalidMethod(w, r)
 		return
 	}
 
-	params, err := h.cli.Parameters()
+	heliosParams, err := deriveParameters(h.cli)
 	if err != nil {
 		internalError(w, err)
 		return
 	}
+	
+	respondWithJSON(w, heliosParams)
+}
 
-	respondWithJSON(w, params)
+func deriveParameters(cli *CardanoCLI) (HeliosNetworkParams, error) {
+	params, err := cli.Parameters()
+	if err != nil {
+		return HeliosNetworkParams{}, err
+	}
+
+	tip, err := cli.Tip()
+	if err != nil {
+		return HeliosNetworkParams{}, err
+	}
+
+	heliosParams := HeliosNetworkParams{
+		CollateralPercentage: params.CollateralPercentage,
+		CostModelParamsV1: params.CostModels.PlutusV1,
+		CostModelParamsV2: params.CostModels.PlutusV2,
+		CostModelParamsV3: params.CostModels.PlutusV3,
+		ExCPUFeePerUnit: params.ExecutionUnitPrices.PriceSteps,
+		ExMemFeePerUnit: params.ExecutionUnitPrices.PriceMemory,
+		MaxCollateralInputs: params.MaxCollateralInputs,
+		MaxTxExCPU: params.MaxTxExecutionUnits.Steps,
+		MaxTxExMem: params.MaxTxExecutionUnits.Memory,
+		RefScriptsFeePerByte: params.MinFeeRefScriptCostPerByte,
+		RefTipSlot: int64(tip.Slot),
+		RefTipTime: time.Now().UnixMilli(),
+		SecondsPerSlot: 1,
+		StakeAddrDeposit: params.StakeAddressDeposit,
+		TxFeeFixed: params.TxFeeFixed,
+		TxFeePerByte: params.TxFeePerByte,
+		UTXODepositPerByte: params.UTXOCostPerByte,
+	}
+
+	return heliosParams, nil
 }
 
 
@@ -375,6 +484,7 @@ func (h *Handler) tx(w http.ResponseWriter, r *http.Request, url URLHelper) {
 	if txID == "" {
 		if r.Method == "POST" {
 			h.submitTx(w, r)
+			return
 		} else {
 			invalidEndpoint(w, r)
 			return
@@ -385,7 +495,7 @@ func (h *Handler) tx(w http.ResponseWriter, r *http.Request, url URLHelper) {
 	
 	switch cmp {
 	case "":
-		h.txBytes(w, r, txID)
+		h.txContent(w, r, txID)
 	case "block":
 		h.txBlockInfo(w, r, txID)
 	case "output":
@@ -412,6 +522,7 @@ func (h *Handler) submitTx(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		internalError(w, err)
+		return
 	}
 
 	var txBytes []byte
@@ -488,7 +599,7 @@ func (h *Handler) submitTx(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *Handler) txBytes(w http.ResponseWriter, r *http.Request, txID string) {
+func (h *Handler) txContent(w http.ResponseWriter, r *http.Request, txID string) {
 	if r.Method != "GET" {
 		invalidMethod(w, r)
 		return
@@ -564,11 +675,74 @@ func (h *Handler) txOutput(w http.ResponseWriter, r *http.Request, url URLHelper
 	respondWithCBOR(w, r, cbor)
 }
 
+func (h *Handler) utxo(w http.ResponseWriter, r *http.Request, url URLHelper) {
+	utxoID, url := url.Pop()
+	if utxoID == "" {
+		invalidEndpoint(w, r)
+		return
+	}
+
+	txID := utxoID[0:64]
+	if len(txID) != 64 {
+		invalidEndpoint(w, r)
+		return
+	}
+
+	outputIndexStr := utxoID[64:]
+	if outputIndexStr == "" {
+		invalidEndpoint(w, r)
+		return
+	}
+
+	outputIndex, err := strconv.ParseInt(outputIndexStr, 10, 32)
+	if err != nil {
+		invalidEndpoint(w, r)
+		return
+	}
+
+	cmp, url := url.Pop()
+
+	switch cmp {
+	case "":
+		h.utxoContent(w, r, txID, int(outputIndex))
+	default:
+		invalidEndpoint(w, r)
+	}
+}
+
+func (h *Handler) utxoContent(w http.ResponseWriter, r *http.Request, txID string, outputIndex int) {
+	utxo, err := h.db.UTXO(txID, outputIndex, r.Context())
+	if err != nil {
+		http.Error(w, fmt.Sprintf("UTXO %s#%d not found (%v)", txID, outputIndex, err), http.StatusNotFound)
+		return
+	}
+
+	code := http.StatusOK
+	if utxo.ConsumedBy != "" {
+		w.Header().Set("Consumed-By", utxo.ConsumedBy)
+		code = http.StatusConflict
+	}
+
+	if r.Header.Get("Accept") != "application/cbor" {
+		respondWithJSONWithStatus(w, utxo, code)
+	} else {
+		cbor, err := EncodeUTXO(utxo)
+		if err != nil {
+			internalError(w, err)
+			return
+		}
+
+		respondWithCBORWithStatus(w, r, cbor, code)
+	}
+}
+
 func (h *Handler) page(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
+	is404 := false
 
 	encodedContent, ok := embeddedFiles[path]
 	if !ok {
+		is404 = path != "" && path != "/"
 		path = "/index.html"
 		encodedContent, ok = embeddedFiles[path]
 		if !ok {
@@ -587,6 +761,10 @@ func (h *Handler) page(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if is404 {
+		w.WriteHeader(http.StatusNotFound)
+	}
+	
 	if _, err = w.Write(content); err != nil {
 		internalError(w, err)
 		return
@@ -686,19 +864,28 @@ func NewCBORJSONEnvelope(cbor []byte) CBORJSONEnvelope {
 }
 
 func respondWithCBOR(w http.ResponseWriter, r *http.Request, cbor []byte) {
+	respondWithCBORWithStatus(w, r, cbor, http.StatusOK)
+}
+
+func respondWithCBORWithStatus(w http.ResponseWriter, r *http.Request, cbor []byte, statusCode int) {
 	accept := r.Header.Get("Accept")
 
 	switch accept {
 	case "application/cbor":
 		w.Header().Set("Content-Type", "application/cbor")
 
+		w.WriteHeader(statusCode)
+
 		if _, err := w.Write(cbor); err != nil {
 			internalError(w, err)
 		}
 	case "application/json":
-		respondWithJSON(w, NewCBORJSONEnvelope(cbor))
+		respondWithJSONWithStatus(w, NewCBORJSONEnvelope(cbor), statusCode)
 	default:
 		w.Header().Set("Content-Type", "text/plain")
+
+		w.WriteHeader(statusCode)
+
 		if _, err := w.Write([]byte(hex.EncodeToString(cbor))); err != nil {
 			internalError(w, err)
 		}
@@ -706,6 +893,10 @@ func respondWithCBOR(w http.ResponseWriter, r *http.Request, cbor []byte) {
 }
 
 func respondWithJSON(w http.ResponseWriter, v any) {
+	respondWithJSONWithStatus(w, v, http.StatusOK)
+}
+
+func respondWithJSONWithStatus(w http.ResponseWriter, v any, statusCode int) {
 	w.Header().Set("Content-Type", "application/json")
 	
 	content, err := json.Marshal(v)
@@ -713,6 +904,8 @@ func respondWithJSON(w http.ResponseWriter, v any) {
 		internalError(w, err)
 		return
 	}
+
+	w.WriteHeader(statusCode)
 
 	if _, err := w.Write([]byte(content)); err != nil {
 		http.Error(w, fmt.Sprintf("internal error: %v", err), http.StatusInternalServerError)
