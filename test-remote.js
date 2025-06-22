@@ -27,6 +27,7 @@ import { expectDefined } from "@helios-lang/type-utils"
  * @type {string}
  */
 const host = `https://${expectDefined(process.env.HOST, "env var HOST not set")}`
+console.log(host)
 
 /**
  * @type {string}
