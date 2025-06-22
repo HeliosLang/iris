@@ -492,7 +492,7 @@ FILE
 
 chmod +x $PRERM
 
-# create the post clenanup script that disables the service
+# create the post cleanup script that disables the service
 # TODO: remove files related to cardano-node and cardano-db-sync
 cat > $POSTRM << FILE
 #!/bin/sh
