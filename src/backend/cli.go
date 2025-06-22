@@ -23,7 +23,7 @@ func NewCardanoCLI(networkName string) *CardanoCLI {
 	return &CardanoCLI{networkName}
 }
 
-// returns the list as hex-encoded CBOR
+// returns the list as CBOR bytes decoded from hex
 func (c *CardanoCLI) AddressUTXOs(address string) ([]byte, error) {
 	cborHex, err := c.invoke(
 		"query", "utxo",
