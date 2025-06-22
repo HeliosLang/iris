@@ -1,6 +1,6 @@
 #!/bin/bash
 
-NAME=cardano-node-ctl
+NAME=cardano-iris
 VERSION=$(grep '"version"' package.json | head -1 | sed -E 's/.*"version": *"([^"]+)".*/\1/')
 
 CARDANO_NODE_PORT=3000
@@ -41,7 +41,7 @@ Description: A Cardano Node Control panel hosted via HTTPS.
 FILE
 
 # copy the binary
-cp $TMP/cardano-node-ctl $BIN_DIR/$NAME
+cp $TMP/$NAME $BIN_DIR/$NAME
 
 # create the service definition
 cat > $SERVICE << FILE
@@ -87,9 +87,9 @@ chmod +x $PREINST
 cat > $POSTINST << FILE
 #!/bin/sh
 
-# Derive network from /etc/cardano-node-ctl/network if available, or ask user
-if test \$(ls -1 /etc/cardano-node-ctl/network | wc -l) -eq 1; then
-    if test \$(cat /etc/cardano-node-ctl/network) = "mainnet"; then
+# Derive network from /etc/$NAME/network if available, or ask user
+if test \$(ls -1 /etc/$NAME/network | wc -l) -eq 1; then
+    if test \$(cat /etc/$NAME/network) = "mainnet"; then
         network="mainnet"
     else
         # always fallback to "preprod" if network file is corrupted
@@ -424,7 +424,7 @@ LimitNOFILE=32768
 WantedBy=multi-user.target
 EOF
 
-# Create the network file in /etc/cardano-node-ctl/
+# Create the network file in /etc/$NAME/
 mkdir -p /etc/$NAME
 echo \$network > /etc/$NAME/network
 
@@ -457,7 +457,7 @@ if test \$cardano_db_sync_status = "inactive" || test \$cardano_db_sync_status =
     echo "Started Cardano DB Sync"
 fi
 
-# Start the actual cardano-node-ctl service
+# Start the actual $NAME service
 systemctl enable $NAME || exit 1
 systemctl start $NAME || exit 1
 FILE
@@ -469,22 +469,22 @@ cat > $PRERM << FILE
 #!/bin/sh
 
 if test \$(systemctl list-unit-files cardano-node.service | grep "cardano-node" | wc -l) -eq 1; then
-    cardano_node_status=\$(systemctl is-active cardano-node)
-    if test \$cardano_node_status = "active" || test \$cardano_node_status = "activating"; then
+    status=\$(systemctl is-active cardano-node)
+    if test \$status = "active" || test \$status = "activating"; then
         systemctl stop cardano-node
     fi
 fi
 
 if test \$(systemctl list-unit-files cardano-db-sync.service | grep "cardano-db-sync" | wc -l) -eq 1; then
-    cardano_db_sync_status=\$(systemctl is-active cardano-db-sync)
-    if test \$cardano_db_sync_status = "active" || test \$cardano_db_sync_status = "activating"; then
+    status=\$(systemctl is-active cardano-db-sync)
+    if test \$status = "active" || test \$status = "activating"; then
         systemctl stop cardano-db-sync
     fi
 fi
 
 if test \$(systemctl list-unit-files $NAME.service | grep $NAME | wc -l) -eq 1; then
-    cardano_node_ctl_status=\$(systemctl is-active cardano-node-ctl)
-    if test \$cardano_node_ctl_status = "active" || test \$cardano_node_ctl_status = "activating"; then
+    status=\$(systemctl is-active $NAME)
+    if test \$status = "active" || test \$status = "activating"; then
         systemctl stop $NAME
     fi
 fi
