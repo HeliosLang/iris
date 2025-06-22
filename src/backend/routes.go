@@ -648,7 +648,7 @@ func (h *Handler) txContent(w http.ResponseWriter, r *http.Request, txID string)
 		return
 	}
 
-	tx, err := h.store.BlockTx(txBlockInfo.BlockID, int(txBlockInfo.Index))
+	tx, err = h.store.BlockTx(txBlockInfo.BlockID, int(txBlockInfo.Index))
 	if err != nil {
 		internalError(w, err)
 		return
