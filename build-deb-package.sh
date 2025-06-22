@@ -88,7 +88,7 @@ cat > $POSTINST << FILE
 #!/bin/sh
 
 # Derive network from /etc/$NAME/network if available, or ask user
-if test \$(ls -1 /etc/$NAME/network | wc -l) -eq 1; then
+if test -f /etc/$NAME/network; then
     if test \$(cat /etc/$NAME/network) = "mainnet"; then
         network="mainnet"
     else
@@ -330,7 +330,7 @@ EOF
 
 # Install cardano-cli,
 #  assume that if a /usr/local/bin/cardano-cli symlink is missing it hasn't been installed yet
-if test \$(ls -1 /usr/local/bin/cardano-cli | wc -l) -eq 0; then
+if test ! -e /usr/local/bin/cardano-cli; then
     # Clone the cardano-node repo if it hasn't been cloned before
     if test \$(ls -1 /tmp/cardano-node | wc -l) -eq 0; then
         git clone https://github.com/IntersectMBO/cardano-node /tmp/cardano-node || exit 1
