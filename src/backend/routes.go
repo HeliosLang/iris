@@ -634,6 +634,12 @@ func (h *Handler) txContent(w http.ResponseWriter, r *http.Request, txID string)
 		return
 	}
 
+	tx := h.mempool.GetTx(txID)
+	if tx != nil {
+		respondWithCBOR(w, r, tx.Cbor())
+		return
+	} 
+
 	// TODO: fetch block id and index efficiently using a specific sql query
 	txBlockInfo, err := h.db.TxBlockInfo(txID, r.Context())
 	if err != nil {
@@ -649,13 +655,8 @@ func (h *Handler) txContent(w http.ResponseWriter, r *http.Request, txID string)
 	}
 
 	if tx == nil {
-		mTx := h.mempool.GetTx(txID)
-		if mTx == nil {
-			http.Error(w, fmt.Sprintf("transaction %s not found", txID), http.StatusNotFound)
-			return
-		} else {
-			tx = mTx
-		}
+		http.Error(w, fmt.Sprintf("transaction %s not found", txID), http.StatusNotFound)
+		return
 	}
 
 	respondWithCBOR(w, r, tx.Cbor())
