@@ -17,6 +17,10 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      DEPLOY_ED25519_KEY: ${{ secrets.DEPLOY_ED25519_KEY }}
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -38,6 +42,18 @@ jobs:
       - name: Write version to dist/latest
         run: node -e "const fs=require('fs'); const v=require('./package.json').version; fs.mkdirSync('dist',{recursive:true}); fs.writeFileSync('dist/latest', v);"
       - run: pnpm test
+      - name: Deploy package to server
+        if: env.DEPLOY_ED25519_KEY != ''
+        run: |
+          echo "$DEPLOY_ED25519_KEY" > key
+          chmod 600 key
+          VERSION=$(cat dist/latest)
+          scp -i key -o StrictHostKeyChecking=no dist/cardano-iris-$VERSION.deb $DEPLOY_USER@$DEPLOY_HOST:
+      - name: Test install remotely
+        if: env.DEPLOY_ED25519_KEY != ''
+        run: |
+          VERSION=$(cat dist/latest)
+          ssh -i key -o StrictHostKeyChecking=no $DEPLOY_USER@$DEPLOY_HOST "sudo dpkg -i cardano-iris-$VERSION.deb"
       - uses: actions/upload-pages-artifact@v3
         with:
           path: './dist'
