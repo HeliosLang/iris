@@ -25,12 +25,12 @@ type Handler struct {
 	cli         *CardanoCLI
 	db          *DB
 	store       *Store
-	paramsCache ParametersCache
+	paramsCache *ParametersCache
 }
 
 type ParametersCache struct {
 	ttl    time.Time
-	params *HeliosNetworkParams
+	params []byte
 	mu     sync.RWMutex
 }
 
@@ -58,7 +58,7 @@ func NewHandler(networkName string) (*Handler, error) {
 		cli,
 		db,
 		store,
-		ParametersCache{},
+		&ParametersCache{},
 	}
 
 	go func() {
@@ -361,7 +361,9 @@ func (h *Handler) parameters(w http.ResponseWriter, r *http.Request) {
 	h.paramsCache.mu.RUnlock()
 
 	if cachedParams != nil && time.Now().Before(ttl) {
-		respondWithJSON(w, *cachedParams)
+		if _, err := w.Write(cachedParams); err != nil {
+			http.Error(w, fmt.Sprintf("internal error: %v", err), http.StatusInternalServerError)
+		}
 		return
 	}
 
@@ -381,10 +383,20 @@ func (h *Handler) parameters(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ttlTime := time.Now().Add(time.Duration(tip.SlotsToEpochEnd) * time.Second)
-	h.paramsCache.params = &heliosParams
+
+	content, err := json.Marshal(heliosParams)
+	if err != nil {
+		internalError(w, err)
+		return
+	}
+
+	encodedParams := []byte(content)
+	h.paramsCache.params = encodedParams
 	h.paramsCache.ttl = ttlTime
 
-	respondWithJSON(w, heliosParams)
+	if _, err := w.Write(encodedParams); err != nil {
+		http.Error(w, fmt.Sprintf("internal error: %v", err), http.StatusInternalServerError)
+	}
 }
 
 func deriveParameters(cli *CardanoCLI) (HeliosNetworkParams, error) {
