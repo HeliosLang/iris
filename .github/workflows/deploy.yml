@@ -1,10 +1,7 @@
-name: build
+name: deploy
 
 on:
   push:
-    branches:
-      - main
-  pull_request:
     branches:
       - main
 
@@ -18,8 +15,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v2
@@ -38,14 +38,6 @@ jobs:
       - name: Write version to dist/latest
         run: node -e "const fs=require('fs'); const v=require('./package.json').version; fs.mkdirSync('dist',{recursive:true}); fs.writeFileSync('dist/latest', v);"
       - run: pnpm test
-  deploy:
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    needs: build
-    steps:
       - uses: actions/upload-pages-artifact@v3
         with:
           path: './dist'
