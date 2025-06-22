@@ -1,6 +1,7 @@
 package main
 
 import (
+	"sort"
 	"sync"
 	"time"
 
@@ -66,4 +67,24 @@ func (m *Mempool) Prune() {
 			delete(m.txs, h)
 		}
 	}
+}
+
+// Hashes returns the list of transaction hashes currently in the mempool.
+func (m *Mempool) Hashes() []string {
+	if m == nil {
+		return nil
+	}
+
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	hashes := make([]string, 0, len(m.txs))
+
+	for h := range m.txs {
+		hashes = append(hashes, h)
+	}
+
+	sort.Strings(hashes)
+
+	return hashes
 }

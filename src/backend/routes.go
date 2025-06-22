@@ -122,6 +122,8 @@ func (h *Handler) api(w http.ResponseWriter, r *http.Request, url URLHelper) {
 		h.parameters(w, r)
 	case "policy":
 		h.policy(w, r, url)
+	case "mempool":
+		h.mempoolTxs(w, r)
 	case "tx":
 		h.tx(w, r, url)
 	case "utxo":
@@ -765,6 +767,19 @@ func (h *Handler) utxoContent(w http.ResponseWriter, r *http.Request, txID strin
 
 		respondWithCBORWithStatus(w, r, cbor, code)
 	}
+}
+
+func (h *Handler) mempoolTxs(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		invalidMethod(w, r)
+		return
+	}
+
+	h.mempool.Prune()
+
+	hashes := h.mempool.Hashes()
+
+	respondWithJSON(w, hashes)
 }
 
 func (h *Handler) page(w http.ResponseWriter, r *http.Request) {
