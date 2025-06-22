@@ -646,8 +646,13 @@ func (h *Handler) txContent(w http.ResponseWriter, r *http.Request, txID string)
 	}
 
 	if tx == nil {
-		http.Error(w, fmt.Sprintf("transaction %s not found", txID), http.StatusNotFound)
-		return
+		mTx := h.mempool.GetTx(txID)
+		if mTx == nil {
+			http.Error(w, fmt.Sprintf("transaction %s not found", txID), http.StatusNotFound)
+			return
+		} else {
+			tx = mTx
+		}
 	}
 
 	respondWithCBOR(w, r, tx.Cbor())

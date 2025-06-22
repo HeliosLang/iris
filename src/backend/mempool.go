@@ -25,6 +25,7 @@ func NewMempool() *Mempool {
 	return &Mempool{txs: make(map[string]MempoolTx)}
 }
 
+
 // AddTx inserts a transaction into the mempool.
 func (m *Mempool) AddTx(tx ledger.Transaction, ttl time.Time) {
 	if m == nil {
@@ -37,6 +38,19 @@ func (m *Mempool) AddTx(tx ledger.Transaction, ttl time.Time) {
 	}
 	hash := tx.Hash().String()
 	m.txs[hash] = MempoolTx{Tx: tx, SubmittedAt: time.Now(), TTL: ttl}
+}
+
+// Returns nil if not found
+func (m *Mempool) GetTx(txID string) ledger.Transaction {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	mTx, ok := m.txs[txID]
+	if !ok {
+		return nil
+	} else {
+		return mTx.Tx
+	}
 }
 
 // Prune removes transactions whose TTL has expired.
