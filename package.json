@@ -9,7 +9,7 @@
     "build:frontend": "vite build",
     "build:package": "pnpm build:package:deb",
     "build:package:deb": "./build-deb-package.sh",
-    "test": "go generate ./src/backend/ && go test -v ./..."
+    "test": "pnpm build:frontend && go generate ./src/backend/ && go test -v ./..."
   },
   "keywords": [],
   "author": "",
