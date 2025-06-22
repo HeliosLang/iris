@@ -223,7 +223,12 @@ describe("IrisClient", async () => {
             console.log(`submitting ${n} txs`)
             for (let tx of txs.txs) {
                 const id = await client.submitTx(tx)
+
                 console.log("submitted " + id.toString())
+
+                await client.getTx(id)
+
+                console.log("  and fetched immediately after")
             }
         })
     }

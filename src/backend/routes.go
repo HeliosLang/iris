@@ -608,6 +608,7 @@ func (h *Handler) submitTx(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// save to mempool
 	txType, err := ledger.DetermineTransactionType(txBytes)
 	if err == nil {
 		if tx, err := ledger.NewTransactionFromCbor(txType, txBytes); err == nil {
