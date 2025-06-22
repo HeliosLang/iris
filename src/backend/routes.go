@@ -361,6 +361,7 @@ func (h *Handler) parameters(w http.ResponseWriter, r *http.Request) {
 	h.paramsCache.mu.RUnlock()
 
 	if cachedParams != nil && time.Now().Before(ttl) {
+		w.Header().Set("Content-Type", "application/json")
 		if _, err := w.Write(cachedParams); err != nil {
 			http.Error(w, fmt.Sprintf("internal error: %v", err), http.StatusInternalServerError)
 		}
@@ -394,6 +395,7 @@ func (h *Handler) parameters(w http.ResponseWriter, r *http.Request) {
 	h.paramsCache.params = encodedParams
 	h.paramsCache.ttl = ttlTime
 
+	w.Header().Set("Content-Type", "application/json")
 	if _, err := w.Write(encodedParams); err != nil {
 		http.Error(w, fmt.Sprintf("internal error: %v", err), http.StatusInternalServerError)
 	}
