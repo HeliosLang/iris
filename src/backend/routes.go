@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -21,9 +22,16 @@ import (
 
 type Handler struct {
 	networkName string
-	cli *CardanoCLI
-	db *DB
-	store *Store
+	cli         *CardanoCLI
+	db          *DB
+	store       *Store
+	paramsCache ParametersCache
+}
+
+type ParametersCache struct {
+	ttl    time.Time
+	params *HeliosNetworkParams
+	mu     sync.RWMutex
 }
 
 type URLHelper struct {
@@ -50,11 +58,12 @@ func NewHandler(networkName string) (*Handler, error) {
 		cli,
 		db,
 		store,
+		ParametersCache{},
 	}
 
 	go func() {
 		for {
-			time.Sleep(5*time.Second)
+			time.Sleep(5 * time.Second)
 
 			tip, err := handler.cli.Tip()
 			if err == nil && strings.HasPrefix(tip.SyncProgress, "100") {
@@ -66,7 +75,7 @@ func NewHandler(networkName string) (*Handler, error) {
 	// wait 2 minutes to create the indices that speed up queries a lot
 	go func() {
 		for {
-			time.Sleep(120*time.Second)
+			time.Sleep(120 * time.Second)
 
 			if err := db.CreateIndices(); err != nil {
 				log.Printf("failed to create indices, retrying later (%v)", err)
@@ -75,7 +84,7 @@ func NewHandler(networkName string) (*Handler, error) {
 			}
 		}
 	}()
-	
+
 	return handler, nil
 }
 
@@ -211,7 +220,6 @@ func (h *Handler) addressUTXOs(w http.ResponseWriter, r *http.Request, addr stri
 	}
 }
 
-
 func (h *Handler) block(w http.ResponseWriter, r *http.Request, url URLHelper) {
 	blockID, url := url.Pop()
 
@@ -322,23 +330,23 @@ func (h *Handler) chainTip(w http.ResponseWriter, r *http.Request) {
 }
 
 type HeliosNetworkParams struct {
-	CollateralPercentage int `json:"collateralPercentage"`
-	CostModelParamsV1 []int `json:"costModelParamsV1"`
-	CostModelParamsV2 []int `json:"costModelParamsV2"`
-	CostModelParamsV3 []int `json:"costModelParamsV3"`
-	ExCPUFeePerUnit float64 `json:"exCpuFeePerUnit"`
-	ExMemFeePerUnit float64 `json:"exMemFeePerUnit"`
-	MaxCollateralInputs int `json:"maxCollateralInputs"`
-	MaxTxExCPU int64 `json:"maxTxExCpu"`
-	MaxTxExMem int64 `json:"maxTxExMem"`
-	RefScriptsFeePerByte int `json:"refScriptsFeePerByte"`
-	RefTipSlot int64 `json:"refTipSlot"`
-	RefTipTime  int64 `json:"refTipTime"`
-	SecondsPerSlot int `json:"secondsPerSlot"`
-	StakeAddrDeposit int64 `json:"stakeAddrDeposit"`
-	TxFeeFixed int `json:"txFeeFixed"`
-	TxFeePerByte int `json:"txFeePerByte"`
-	UTXODepositPerByte int `json:"utxoDepositPerByte"`
+	CollateralPercentage int     `json:"collateralPercentage"`
+	CostModelParamsV1    []int   `json:"costModelParamsV1"`
+	CostModelParamsV2    []int   `json:"costModelParamsV2"`
+	CostModelParamsV3    []int   `json:"costModelParamsV3"`
+	ExCPUFeePerUnit      float64 `json:"exCpuFeePerUnit"`
+	ExMemFeePerUnit      float64 `json:"exMemFeePerUnit"`
+	MaxCollateralInputs  int     `json:"maxCollateralInputs"`
+	MaxTxExCPU           int64   `json:"maxTxExCpu"`
+	MaxTxExMem           int64   `json:"maxTxExMem"`
+	RefScriptsFeePerByte int     `json:"refScriptsFeePerByte"`
+	RefTipSlot           int64   `json:"refTipSlot"`
+	RefTipTime           int64   `json:"refTipTime"`
+	SecondsPerSlot       int     `json:"secondsPerSlot"`
+	StakeAddrDeposit     int64   `json:"stakeAddrDeposit"`
+	TxFeeFixed           int     `json:"txFeeFixed"`
+	TxFeePerByte         int     `json:"txFeePerByte"`
+	UTXODepositPerByte   int     `json:"utxoDepositPerByte"`
 }
 
 func (h *Handler) parameters(w http.ResponseWriter, r *http.Request) {
@@ -347,12 +355,35 @@ func (h *Handler) parameters(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.paramsCache.mu.RLock()
+	cachedParams := h.paramsCache.params
+	ttl := h.paramsCache.ttl
+	h.paramsCache.mu.RUnlock()
+
+	if cachedParams != nil && time.Now().Before(ttl) {
+		respondWithJSON(w, *cachedParams)
+		return
+	}
+
+	h.paramsCache.mu.Lock()
+	defer h.paramsCache.mu.Unlock()
+
 	heliosParams, err := deriveParameters(h.cli)
 	if err != nil {
 		internalError(w, err)
 		return
 	}
-	
+
+	tip, err := h.cli.Tip()
+	if err != nil {
+		internalError(w, err)
+		return
+	}
+
+	ttlTime := time.Now().Add(time.Duration(tip.SlotsToEpochEnd) * time.Second)
+	h.paramsCache.params = &heliosParams
+	h.paramsCache.ttl = ttlTime
+
 	respondWithJSON(w, heliosParams)
 }
 
@@ -369,27 +400,26 @@ func deriveParameters(cli *CardanoCLI) (HeliosNetworkParams, error) {
 
 	heliosParams := HeliosNetworkParams{
 		CollateralPercentage: params.CollateralPercentage,
-		CostModelParamsV1: params.CostModels.PlutusV1,
-		CostModelParamsV2: params.CostModels.PlutusV2,
-		CostModelParamsV3: params.CostModels.PlutusV3,
-		ExCPUFeePerUnit: params.ExecutionUnitPrices.PriceSteps,
-		ExMemFeePerUnit: params.ExecutionUnitPrices.PriceMemory,
-		MaxCollateralInputs: params.MaxCollateralInputs,
-		MaxTxExCPU: params.MaxTxExecutionUnits.Steps,
-		MaxTxExMem: params.MaxTxExecutionUnits.Memory,
+		CostModelParamsV1:    params.CostModels.PlutusV1,
+		CostModelParamsV2:    params.CostModels.PlutusV2,
+		CostModelParamsV3:    params.CostModels.PlutusV3,
+		ExCPUFeePerUnit:      params.ExecutionUnitPrices.PriceSteps,
+		ExMemFeePerUnit:      params.ExecutionUnitPrices.PriceMemory,
+		MaxCollateralInputs:  params.MaxCollateralInputs,
+		MaxTxExCPU:           params.MaxTxExecutionUnits.Steps,
+		MaxTxExMem:           params.MaxTxExecutionUnits.Memory,
 		RefScriptsFeePerByte: params.MinFeeRefScriptCostPerByte,
-		RefTipSlot: int64(tip.Slot),
-		RefTipTime: time.Now().UnixMilli(),
-		SecondsPerSlot: 1,
-		StakeAddrDeposit: params.StakeAddressDeposit,
-		TxFeeFixed: params.TxFeeFixed,
-		TxFeePerByte: params.TxFeePerByte,
-		UTXODepositPerByte: params.UTXOCostPerByte,
+		RefTipSlot:           int64(tip.Slot),
+		RefTipTime:           time.Now().UnixMilli(),
+		SecondsPerSlot:       1,
+		StakeAddrDeposit:     params.StakeAddressDeposit,
+		TxFeeFixed:           params.TxFeeFixed,
+		TxFeePerByte:         params.TxFeePerByte,
+		UTXODepositPerByte:   params.UTXOCostPerByte,
 	}
 
 	return heliosParams, nil
 }
-
 
 func (h *Handler) policy(w http.ResponseWriter, r *http.Request, url URLHelper) {
 	policyHex, url := url.Pop()
@@ -443,7 +473,7 @@ func (h *Handler) policyAsset(w http.ResponseWriter, r *http.Request, url URLHel
 	cmp, url := url.Pop()
 	switch cmp {
 	case "addresses":
-		h.policyAssetAddresses(w, r, hex.EncodeToString(policy) + hex.EncodeToString(assetName))
+		h.policyAssetAddresses(w, r, hex.EncodeToString(policy)+hex.EncodeToString(assetName))
 	default:
 		invalidEndpoint(w, r)
 	}
@@ -492,7 +522,7 @@ func (h *Handler) tx(w http.ResponseWriter, r *http.Request, url URLHelper) {
 	}
 
 	cmp, url := url.Pop()
-	
+
 	switch cmp {
 	case "":
 		h.txContent(w, r, txID)
@@ -502,12 +532,12 @@ func (h *Handler) tx(w http.ResponseWriter, r *http.Request, url URLHelper) {
 		h.txOutput(w, r, url, txID)
 	default:
 		invalidEndpoint(w, r)
-	}	
+	}
 }
 
 type TxEnvelope struct {
-	CBORHex string `json:"cborHex"`
-	Type string `json:"type,omitempty"`
+	CBORHex     string `json:"cborHex"`
+	Type        string `json:"type,omitempty"`
 	Description string `json:"description,omitempty"`
 }
 
@@ -526,9 +556,9 @@ func (h *Handler) submitTx(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var txBytes []byte
-	
+
 	switch r.Header.Get("Content-Type") {
-	
+
 	case "application/cbor":
 		txBytes = body
 	case "application/json":
@@ -764,7 +794,7 @@ func (h *Handler) page(w http.ResponseWriter, r *http.Request) {
 	if is404 {
 		w.WriteHeader(http.StatusNotFound)
 	}
-	
+
 	if _, err = w.Write(content); err != nil {
 		internalError(w, err)
 		return
@@ -782,7 +812,7 @@ func (url URLHelper) Pop() (string, URLHelper) {
 	components := strings.Split(path, "/")
 
 	if url.pos < len(components) {
-		return components[url.pos], URLHelper{url.url, url.pos+1}
+		return components[url.pos], URLHelper{url.url, url.pos + 1}
 	} else {
 		return "", url
 	}
@@ -840,7 +870,7 @@ func deriveMimeTypeFromExt(p string) string {
 		return "application/wasm"
 	default:
 		return "application/octet-stream"
-	}	
+	}
 }
 
 func invalidEndpoint(w http.ResponseWriter, r *http.Request) {
@@ -898,7 +928,7 @@ func respondWithJSON(w http.ResponseWriter, v any) {
 
 func respondWithJSONWithStatus(w http.ResponseWriter, v any, statusCode int) {
 	w.Header().Set("Content-Type", "application/json")
-	
+
 	content, err := json.Marshal(v)
 	if err != nil {
 		internalError(w, err)
