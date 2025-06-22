@@ -29,9 +29,9 @@ import { expectDefined } from "@helios-lang/type-utils"
 const host = `https://${expectDefined(process.env.HOST, "env var HOST not set")}`
 
 /**
- * @type {string[]}
+ * @type {string}
  */
-const phrase = JSON.parse(expectDefined(process.env.WALLET, "env var WALLET not set"))
+const phrase = expectDefined(process.env.WALLET, "env var WALLET not set")
 
 describe("IrisClient", async () => {
     const client = makeIrisClient(host, false)
@@ -161,7 +161,7 @@ describe("IrisClient", async () => {
         )
     })
 
-    if (phrase.length > 0) {
+    if (phrase != "") {
         // | n   | blockfrost | iris |
         // | 10  | ok         | ok   |
         // | 25  | ok         | ok   |
@@ -173,7 +173,7 @@ describe("IrisClient", async () => {
         await it(`tx chain with ${n} txs`, async () => {
             // each tx pays everything to itself
             const chain = makeTxChainBuilder(client)
-            const key = restoreRootPrivateKey(phrase)
+            const key = restoreRootPrivateKey(phrase.split(" "))
             const wallet = makeUnstakedSimpleWallet(key, chain)
             console.log(wallet.address.toString())
 
