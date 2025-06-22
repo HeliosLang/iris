@@ -162,6 +162,23 @@ func (c *CardanoCLI) Tip() (CardanoCLITip, error) {
 	return tip, nil
 }
 
+// ConvertSlotsToTime returns the future time at which the given slot number
+// will be reached. The provided slot must be an absolute slot number.
+// The current tip is fetched to determine the offset.
+func (c *CardanoCLI) ConvertSlotsToTime(slot uint64) (time.Time, error) {
+	tip, err := c.Tip()
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	diff := int64(slot) - int64(tip.Slot)
+	if diff < 0 {
+		diff = 0
+	}
+
+	return time.Now().Add(time.Duration(diff) * time.Second), nil
+}
+
 func (c *CardanoCLI) DeriveParameters() (HeliosNetworkParams, error) {
 	params, err := c.Parameters()
 	if err != nil {

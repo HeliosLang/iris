@@ -17,6 +17,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/blinklabs-io/gouroboros/ledger"
 	"github.com/google/uuid"
 )
 
@@ -26,6 +27,7 @@ type Handler struct {
 	db          *DB
 	store       *Store
 	paramsCache *ParametersCache
+	mempool     *Mempool
 }
 
 type ParametersCache struct {
@@ -59,6 +61,7 @@ func NewHandler(networkName string) (*Handler, error) {
 		db,
 		store,
 		&ParametersCache{},
+		NewMempool(),
 	}
 
 	go func() {
@@ -601,6 +604,19 @@ func (h *Handler) submitTx(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		internalError(w, err)
 		return
+	}
+
+	txType, err := ledger.DetermineTransactionType(txBytes)
+	if err == nil {
+		if tx, err := ledger.NewTransactionFromCbor(txType, txBytes); err == nil {
+			ttlTime := time.Now().Add(10 * time.Minute)
+			if ttl := tx.TTL(); ttl != 0 {
+				if t, err := h.cli.ConvertSlotsToTime(ttl); err == nil {
+					ttlTime = t
+				}
+			}
+			h.mempool.AddTx(tx, ttlTime)
+		}
 	}
 
 	if _, err := w.Write([]byte(result)); err != nil {
