@@ -97,6 +97,48 @@ func (m *Mempool) Hashes() []string {
 	return hashes
 }
 
+// Overlay merges mempool transactions with a base UTXO list. It adds UTXOs
+// produced by mempool transactions that pass the filter function and removes
+// those consumed by them.
+func (m *Mempool) Overlay(base []UTXO, filter func(UTXO) bool) []UTXO {
+	if m == nil {
+		return base
+	}
+
+	utxoMap := make(map[string]UTXO, len(base))
+	for _, u := range base {
+		utxoMap[fmt.Sprintf("%s%d", u.TxID, u.OutputIndex)] = u
+	}
+
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	for _, mtx := range m.txs {
+		for _, prod := range mtx.Tx.Produced() {
+			u := ledgerUtxoToUTXO(prod)
+			key := fmt.Sprintf("%s%d", u.TxID, u.OutputIndex)
+			if _, ok := utxoMap[key]; !ok {
+				if filter == nil || filter(u) {
+					utxoMap[key] = u
+				}
+			}
+		}
+
+		for _, cons := range mtx.Tx.Consumed() {
+			key := fmt.Sprintf("%s%d", cons.Id().String(), cons.Index())
+			delete(utxoMap, key)
+		}
+	}
+
+	res := make([]UTXO, 0, len(utxoMap))
+	for _, u := range utxoMap {
+		res = append(res, u)
+	}
+
+	return res
+}
+
+
 func isZeroHash(h common.Blake2b256) bool {
 	for _, b := range h {
 		if b != 0 {
@@ -156,52 +198,4 @@ func ledgerUtxoToUTXO(u common.Utxo) UTXO {
 		InlineDatum: inlineDatum,
 		RefScript:   refScript,
 	}
-}
-
-// Overlay merges mempool transactions with a base UTXO list. It adds UTXOs
-// produced by mempool transactions that pass the filter function and removes
-// those consumed by them.
-func (m *Mempool) Overlay(base []UTXO, filter func(UTXO) bool) []UTXO {
-	if m == nil {
-		return base
-	}
-
-	utxoMap := make(map[string]UTXO, len(base))
-	for _, u := range base {
-		utxoMap[fmt.Sprintf("%s%d", u.TxID, u.OutputIndex)] = u
-	}
-
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	for _, mtx := range m.txs {
-		for _, prod := range mtx.Tx.Produced() {
-			u := ledgerUtxoToUTXO(prod)
-			key := fmt.Sprintf("%s%d", u.TxID, u.OutputIndex)
-			if _, ok := utxoMap[key]; !ok {
-				if filter == nil || filter(u) {
-					utxoMap[key] = u
-				}
-			}
-		}
-
-		for _, cons := range mtx.Tx.Consumed() {
-			key := fmt.Sprintf("%s%d", cons.Id().String(), cons.Index())
-			delete(utxoMap, key)
-		}
-	}
-
-	res := make([]UTXO, 0, len(utxoMap))
-	for _, u := range utxoMap {
-		res = append(res, u)
-	}
-
-	sort.Slice(res, func(i, j int) bool {
-		if res[i].TxID == res[j].TxID {
-			return res[i].OutputIndex < res[j].OutputIndex
-		}
-		return res[i].TxID < res[j].TxID
-	})
-
-	return res
 }
