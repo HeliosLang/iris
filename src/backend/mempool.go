@@ -1,11 +1,17 @@
 package main
 
 import (
+	"encoding/hex"
+	"fmt"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 
+	"github.com/blinklabs-io/gouroboros/cbor"
 	"github.com/blinklabs-io/gouroboros/ledger"
+	"github.com/blinklabs-io/gouroboros/ledger/babbage"
+	"github.com/blinklabs-io/gouroboros/ledger/common"
 )
 
 // MempoolTx represents a transaction tracked in the mempool.
@@ -25,7 +31,6 @@ type Mempool struct {
 func NewMempool() *Mempool {
 	return &Mempool{txs: make(map[string]MempoolTx)}
 }
-
 
 // AddTx inserts a transaction into the mempool.
 func (m *Mempool) AddTx(tx ledger.Transaction, ttl time.Time) {
@@ -90,4 +95,113 @@ func (m *Mempool) Hashes() []string {
 	sort.Strings(hashes)
 
 	return hashes
+}
+
+func isZeroHash(h common.Blake2b256) bool {
+	for _, b := range h {
+		if b != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func ledgerUtxoToUTXO(u common.Utxo) UTXO {
+	addr := u.Output.Address().String()
+	lovelace := strconv.FormatUint(u.Output.Amount(), 10)
+
+	assets := []PolicyAsset{}
+	if ma := u.Output.Assets(); ma != nil {
+		for _, policy := range ma.Policies() {
+			policyStr := policy.String()
+			for _, assetName := range ma.Assets(policy) {
+				qty := ma.Asset(policy, assetName)
+				assets = append(assets, PolicyAsset{
+					Asset:    policyStr + hex.EncodeToString(assetName),
+					Quantity: strconv.FormatUint(uint64(qty), 10),
+				})
+			}
+		}
+	}
+
+	datumHash := ""
+	if dh := u.Output.DatumHash(); dh != nil && !isZeroHash(*dh) {
+		datumHash = dh.String()
+	}
+
+	inlineDatum := ""
+	if d := u.Output.Datum(); d != nil {
+		inlineDatum = hex.EncodeToString(d.Cbor())
+	}
+
+	refScript := ""
+	if bo, ok := u.Output.(babbage.BabbageTransactionOutput); ok {
+		if bo.ScriptRef != nil {
+			switch c := bo.ScriptRef.Content.(type) {
+			case []byte:
+				refScript = hex.EncodeToString(c)
+			case cbor.RawMessage:
+				refScript = hex.EncodeToString([]byte(c))
+			}
+		}
+	}
+
+	return UTXO{
+		TxID:        u.Id.Id().String(),
+		OutputIndex: int(u.Id.Index()),
+		Address:     addr,
+		Lovelace:    lovelace,
+		Assets:      assets,
+		DatumHash:   datumHash,
+		InlineDatum: inlineDatum,
+		RefScript:   refScript,
+	}
+}
+
+// Overlay merges mempool transactions with a base UTXO list. It adds UTXOs
+// produced by mempool transactions that pass the filter function and removes
+// those consumed by them.
+func (m *Mempool) Overlay(base []UTXO, filter func(UTXO) bool) []UTXO {
+	if m == nil {
+		return base
+	}
+
+	utxoMap := make(map[string]UTXO, len(base))
+	for _, u := range base {
+		utxoMap[fmt.Sprintf("%s%d", u.TxID, u.OutputIndex)] = u
+	}
+
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	for _, mtx := range m.txs {
+		for _, prod := range mtx.Tx.Produced() {
+			u := ledgerUtxoToUTXO(prod)
+			key := fmt.Sprintf("%s%d", u.TxID, u.OutputIndex)
+			if _, ok := utxoMap[key]; !ok {
+				if filter == nil || filter(u) {
+					utxoMap[key] = u
+				}
+			}
+		}
+
+		for _, cons := range mtx.Tx.Consumed() {
+			key := fmt.Sprintf("%s%d", cons.Id().String(), cons.Index())
+			delete(utxoMap, key)
+		}
+	}
+
+	res := make([]UTXO, 0, len(utxoMap))
+	for _, u := range utxoMap {
+		res = append(res, u)
+	}
+
+	sort.Slice(res, func(i, j int) bool {
+		if res[i].TxID == res[j].TxID {
+			return res[i].OutputIndex < res[j].OutputIndex
+		}
+		return res[i].TxID < res[j].TxID
+	})
+
+	return res
 }
