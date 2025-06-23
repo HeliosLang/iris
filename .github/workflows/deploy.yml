@@ -56,6 +56,8 @@ jobs:
         run: |
           VERSION=$(cat dist/latest)
           ssh -i key -o StrictHostKeyChecking=no $USER@$HOST "sudo dpkg -i cardano-iris-$VERSION.deb"
+      - name: Wait for remote install to finish
+        run: sleep 20
       - name: Enforce IPv4 Connectivity
         uses: ./.github/actions/force-ipv4
       - name: Run integ tests
