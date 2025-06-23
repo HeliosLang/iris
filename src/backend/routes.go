@@ -640,7 +640,9 @@ func (h *Handler) submitTx(w http.ResponseWriter, r *http.Request) {
 			ttlTime := time.Now().Add(10 * time.Minute)
 			if ttl := tx.TTL(); ttl != 0 {
 				if t, err := h.cli.ConvertSlotsToTime(ttl); err == nil {
-					ttlTime = t
+					if t.Before(ttlTime) {
+						ttlTime = t
+					}
 				}
 			}
 			h.mempool.AddTx(tx, ttlTime)
