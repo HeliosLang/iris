@@ -209,23 +209,7 @@ func (h *Handler) addressUTXOs(w http.ResponseWriter, r *http.Request, addr stri
 		return
 	}
 
-	if r.Header.Get("Accept") != "application/cbor" {
-		respondWithJSON(w, obj)
-		return
-	}
-
-	entries := [][]byte{}
-	for _, utxo := range obj {
-		encodedUTXO, err := EncodeUTXO(utxo)
-		if err != nil {
-			internalError(w, err)
-			return
-		}
-		entries = append(entries, encodedUTXO)
-	}
-
-	cbor := EncodeList(entries)
-	respondWithCBOR(w, r, cbor)
+	respondWithUTXOs(w, r, obj)
 }
 
 func (h *Handler) getAddressUTXOs(ctx context.Context, addr string, asset string) ([]UTXO, error) {
@@ -341,7 +325,7 @@ func (h *Handler) selectUTXOs(w http.ResponseWriter, r *http.Request, addr strin
 		h.selector.lock(utxoKey(u), 10*time.Second)
 	}
 
-	respondWithJSON(w, selected)
+	respondWithUTXOs(w, r, selected)
 }
 
 func (h *Handler) block(w http.ResponseWriter, r *http.Request, url URLHelper) {
@@ -1079,4 +1063,24 @@ func respondWithJSONWithStatus(w http.ResponseWriter, v any, statusCode int) {
 	if _, err := w.Write([]byte(content)); err != nil {
 		http.Error(w, fmt.Sprintf("internal error: %v", err), http.StatusInternalServerError)
 	}
+}
+
+func respondWithUTXOs(w http.ResponseWriter, r *http.Request, utxos []UTXO) {
+	if r.Header.Get("Accept") != "application/cbor" {
+		respondWithJSON(w, utxos)
+		return
+	}
+
+	entries := make([][]byte, 0, len(utxos))
+	for _, utxo := range utxos {
+		encodedUTXO, err := EncodeUTXO(utxo)
+		if err != nil {
+			internalError(w, err)
+			return
+		}
+		entries = append(entries, encodedUTXO)
+	}
+
+	cbor := EncodeList(entries)
+	respondWithCBOR(w, r, cbor)
 }
