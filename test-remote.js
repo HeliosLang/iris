@@ -171,31 +171,37 @@ describe("IrisClient", async () => {
 
         const n = 5
         await it(`tx chain with ${n} txs`, async () => {
-            // each tx pays everything to itself
-            const chain = makeTxChainBuilder(client)
             const key = restoreRootPrivateKey(phrase.split(" "))
-            const wallet = makeUnstakedSimpleWallet(key, chain)
-            console.log(wallet.address.toString())
+            const unchainedWallet = makeUnstakedSimpleWallet(key, client)
+            console.log(`Test wallet address: ${unchainedWallet.address.toString()}`)
 
             // the first tx creates a ref input for the latter
             const tx0 = await makeTxBuilder({ isMainnet: false })
-                .spendUnsafe(await wallet.utxos)
+                .spendUnsafe(await unchainedWallet.utxos)
                 .payUnsafe(
-                    wallet.address,
+                    unchainedWallet.address,
                     makeValue(5_000_000n),
                     makeInlineTxOutputDatum(makeIntData(0))
                 )
                 .build({
-                    changeAddress: wallet.address
+                    changeAddress: unchainedWallet.address
                 })
 
             const refID = makeTxOutputId(tx0.id(), 0)
             const ref = makeTxInput(refID, tx0.body.outputs[0])
 
-            tx0.addSignatures(await wallet.signTx(tx0))
-            await chain.submitTx(tx0)
+            tx0.addSignatures(await unchainedWallet.signTx(tx0))
+            console.log("submitting tx0")
+            const id0 = await unchainedWallet.submitTx(tx0)
+
+            console.log("submitted tx0 " + id0.toString())
+
+            // each tx pays everything to itself
+            const chain = makeTxChainBuilder(client)
+            const wallet = makeUnstakedSimpleWallet(key, chain)
 
             for (let i = 1; i < n; i++) {
+                // This now relies on the mempool overlay
                 const allUtxos = (await wallet.utxos).filter(
                     (utxo) => !utxo.id.isEqual(refID)
                 )
