@@ -1,16 +1,19 @@
 package main
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
+	"math/big"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -28,6 +31,7 @@ type Handler struct {
 	store       *Store
 	paramsCache *ParametersCache
 	mempool     *Mempool
+	selector    *CoinSelector
 }
 
 type ParametersCache struct {
@@ -39,6 +43,13 @@ type ParametersCache struct {
 type URLHelper struct {
 	url *url.URL
 	pos int
+}
+
+type SelectRequest struct {
+	Lovelace    string `json:"lovelace"`
+	Asset       string `json:"asset"`
+	MinQuantity string `json:"minQuantity"`
+	Algorithm   string `json:"algorithm"`
 }
 
 func NewHandler(networkName string) (*Handler, error) {
@@ -62,6 +73,7 @@ func NewHandler(networkName string) (*Handler, error) {
 		store,
 		&ParametersCache{},
 		NewMempool(),
+		NewCoinSelector(),
 	}
 
 	go func() {
@@ -163,34 +175,70 @@ func (h *Handler) address(w http.ResponseWriter, r *http.Request, url URLHelper)
 
 	switch cmp {
 	case "utxos":
-		h.addressUTXOs(w, r, addr)
+		switch r.Method {
+		case http.MethodGet:
+			h.addressUTXOs(w, r, addr)
+		case http.MethodPost:
+			h.selectUTXOs(w, r, addr)
+		default:
+			invalidMethod(w, r)
+		}
 	default:
 		invalidEndpoint(w, r)
 	}
 }
 
 func (h *Handler) addressUTXOs(w http.ResponseWriter, r *http.Request, addr string) {
-	if r.Method != "GET" {
+	if r.Method != http.MethodGet {
 		invalidMethod(w, r)
 		return
 	}
 
-	var (
-		obj []UTXO
-		err error
-	)
+	asset := ""
+	if vals, ok := r.URL.Query()["asset"]; ok {
+		if len(vals) != 1 {
+			http.Error(w, fmt.Sprintf("asset query parameter used %d times instead of once", len(vals)), http.StatusBadRequest)
+			return
+		}
+		asset = vals[0]
+	}
 
-	filterByAsset, ok := r.URL.Query()["asset"]
+	obj, err := h.getAddressUTXOs(r.Context(), addr, asset)
+	if err != nil {
+		internalError(w, err)
+		return
+	}
 
-	var filter func(UTXO) bool
+	if r.Header.Get("Accept") != "application/cbor" {
+		respondWithJSON(w, obj)
+		return
+	}
 
-	if ok && len(filterByAsset) == 1 {
-		asset := filterByAsset[0]
-
-		obj, err = h.db.AddressUTXOsWithAsset(addr, asset, r.Context())
+	entries := [][]byte{}
+	for _, utxo := range obj {
+		encodedUTXO, err := EncodeUTXO(utxo)
 		if err != nil {
 			internalError(w, err)
 			return
+		}
+		entries = append(entries, encodedUTXO)
+	}
+
+	cbor := EncodeList(entries)
+	respondWithCBOR(w, r, cbor)
+}
+
+func (h *Handler) getAddressUTXOs(ctx context.Context, addr string, asset string) ([]UTXO, error) {
+	var (
+		obj    []UTXO
+		err    error
+		filter func(UTXO) bool
+	)
+
+	if asset != "" {
+		obj, err = h.db.AddressUTXOsWithAsset(addr, asset, ctx)
+		if err != nil {
+			return nil, err
 		}
 
 		lower := strings.ToLower(asset)
@@ -207,18 +255,12 @@ func (h *Handler) addressUTXOs(w http.ResponseWriter, r *http.Request, addr stri
 				return false
 			}
 		} else {
-			filter = func(u UTXO) bool {
-				return u.Address == addr && len(u.Assets) == 0
-			}
+			filter = func(u UTXO) bool { return u.Address == addr && len(u.Assets) == 0 }
 		}
-	} else if ok && len(filterByAsset) != 1 {
-		http.Error(w, fmt.Sprintf("asset query parameter used %d times instead of once", len(filterByAsset)), http.StatusBadRequest)
-		return
 	} else {
-		obj, err = h.db.AddressUTXOs(addr, r.Context())
+		obj, err = h.db.AddressUTXOs(addr, ctx)
 		if err != nil {
-			internalError(w, err)
-			return
+			return nil, err
 		}
 
 		filter = func(u UTXO) bool { return u.Address == addr }
@@ -226,28 +268,80 @@ func (h *Handler) addressUTXOs(w http.ResponseWriter, r *http.Request, addr stri
 
 	obj = h.mempool.Overlay(obj, filter)
 
-	if r.Header.Get("Accept") != "application/cbor" {
-		respondWithJSON(w, obj)
-	} else {
-		entries := [][]byte{}
+	return obj, nil
+}
 
-		for _, utxo := range obj {
-			encodedUTXO, err := EncodeUTXO(utxo)
-			if err != nil {
-				internalError(w, err)
-				return
+func (h *Handler) selectUTXOs(w http.ResponseWriter, r *http.Request, addr string) {
+	var req SelectRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("failed to decode request: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	utxos, err := h.getAddressUTXOs(r.Context(), addr, req.Asset)
+	if err != nil {
+		internalError(w, err)
+		return
+	}
+
+	h.selector.mu.Lock()
+	defer h.selector.mu.Unlock()
+	h.selector.pruneExpired()
+
+	filtered := make([]UTXO, 0, len(utxos))
+	for _, u := range utxos {
+		if h.selector.isLocked(utxoKey(u)) {
+			continue
+		}
+		filtered = append(filtered, u)
+	}
+
+	utxos = filtered
+
+	sort.Slice(utxos, func(i, j int) bool {
+		li, _ := new(big.Int).SetString(utxos[i].Lovelace, 10)
+		lj, _ := new(big.Int).SetString(utxos[j].Lovelace, 10)
+		if strings.EqualFold(req.Algorithm, "largest") || strings.EqualFold(req.Algorithm, "largest-first") {
+			return li.Cmp(lj) > 0
+		}
+		return li.Cmp(lj) < 0
+	})
+
+	needLov, _ := new(big.Int).SetString(req.Lovelace, 10)
+	gotLov := big.NewInt(0)
+	needAsset, _ := new(big.Int).SetString(req.MinQuantity, 10)
+	gotAsset := big.NewInt(0)
+
+	selected := []UTXO{}
+	for _, u := range utxos {
+		lv, _ := new(big.Int).SetString(u.Lovelace, 10)
+		gotLov.Add(gotLov, lv)
+
+		if req.Asset != "" {
+			for _, a := range u.Assets {
+				if strings.EqualFold(a.Asset, req.Asset) {
+					q, _ := new(big.Int).SetString(a.Quantity, 10)
+					gotAsset.Add(gotAsset, q)
+				}
 			}
-
-			entries = append(
-				entries,
-				encodedUTXO,
-			)
 		}
 
-		cbor := EncodeList(entries)
-
-		respondWithCBOR(w, r, cbor)
+		selected = append(selected, u)
+		if gotLov.Cmp(needLov) >= 0 && (req.Asset == "" || gotAsset.Cmp(needAsset) >= 0) {
+			break
+		}
 	}
+
+	if gotLov.Cmp(needLov) < 0 || (req.Asset != "" && gotAsset.Cmp(needAsset) < 0) {
+		http.Error(w, "not enough UTXOs", http.StatusNotFound)
+		return
+	}
+
+	for _, u := range selected {
+		h.selector.lock(utxoKey(u), 10*time.Second)
+	}
+
+	respondWithJSON(w, selected)
 }
 
 func (h *Handler) block(w http.ResponseWriter, r *http.Request, url URLHelper) {
