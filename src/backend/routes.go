@@ -182,6 +182,8 @@ func (h *Handler) addressUTXOs(w http.ResponseWriter, r *http.Request, addr stri
 
 	filterByAsset, ok := r.URL.Query()["asset"]
 
+	var filter func(UTXO) bool
+
 	if ok && len(filterByAsset) == 1 {
 		asset := filterByAsset[0]
 
@@ -189,6 +191,25 @@ func (h *Handler) addressUTXOs(w http.ResponseWriter, r *http.Request, addr stri
 		if err != nil {
 			internalError(w, err)
 			return
+		}
+
+		lower := strings.ToLower(asset)
+		if lower != "lovelace" {
+			filter = func(u UTXO) bool {
+				if u.Address != addr {
+					return false
+				}
+				for _, a := range u.Assets {
+					if strings.EqualFold(a.Asset, asset) {
+						return true
+					}
+				}
+				return false
+			}
+		} else {
+			filter = func(u UTXO) bool {
+				return u.Address == addr && len(u.Assets) == 0
+			}
 		}
 	} else if ok && len(filterByAsset) != 1 {
 		http.Error(w, fmt.Sprintf("asset query parameter used %d times instead of once", len(filterByAsset)), http.StatusBadRequest)
@@ -199,7 +220,11 @@ func (h *Handler) addressUTXOs(w http.ResponseWriter, r *http.Request, addr stri
 			internalError(w, err)
 			return
 		}
+
+		filter = func(u UTXO) bool { return u.Address == addr }
 	}
+
+	obj = h.mempool.Overlay(obj, filter)
 
 	if r.Header.Get("Accept") != "application/cbor" {
 		respondWithJSON(w, obj)
@@ -638,7 +663,7 @@ func (h *Handler) txContent(w http.ResponseWriter, r *http.Request, txID string)
 	if tx != nil {
 		respondWithCBOR(w, r, tx.Cbor())
 		return
-	} 
+	}
 
 	// TODO: fetch block id and index efficiently using a specific sql query
 	txBlockInfo, err := h.db.TxBlockInfo(txID, r.Context())
