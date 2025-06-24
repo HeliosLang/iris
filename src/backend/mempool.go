@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/hex"
 	"fmt"
 	"sort"
@@ -25,11 +26,12 @@ type MempoolTx struct {
 type Mempool struct {
 	mu  sync.RWMutex
 	txs map[string]MempoolTx
+	db  *DB
 }
 
 // NewMempool creates an empty mempool instance.
-func NewMempool() *Mempool {
-	return &Mempool{txs: make(map[string]MempoolTx)}
+func NewMempool(db *DB) *Mempool {
+	return &Mempool{txs: make(map[string]MempoolTx), db: db}
 }
 
 // AddTx inserts a transaction into the mempool.
@@ -62,17 +64,48 @@ func (m *Mempool) GetTx(txID string) ledger.Transaction {
 	}
 }
 
-// Prune removes transactions whose TTL has expired.
-func (m *Mempool) Prune() {
+// prune removes expired or already confirmed transactions.
+func (m *Mempool) prune() {
 	if m == nil {
 		return
 	}
+
 	now := time.Now()
+
 	m.mu.Lock()
-	defer m.mu.Unlock()
+
+	ids := make([]string, 0, len(m.txs))
 	for h, tx := range m.txs {
 		if !tx.TTL.IsZero() && now.After(tx.TTL) {
 			delete(m.txs, h)
+		} else {
+			ids = append(ids, h)
+		}
+	}
+
+	m.mu.Unlock()
+
+	if m.db == nil || len(ids) == 0 {
+		return
+	}
+
+	ctx := context.Background()
+	missing, err := m.db.FilterMissingTxs(ids, ctx)
+	if err != nil {
+		// if query fails, do not modify further
+		return
+	}
+
+	missSet := make(map[string]struct{}, len(missing))
+	for _, id := range missing {
+		missSet[id] = struct{}{}
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, id := range ids {
+		if _, ok := missSet[id]; !ok {
+			delete(m.txs, id)
 		}
 	}
 }
@@ -104,6 +137,8 @@ func (m *Mempool) Overlay(base []UTXO, filter func(UTXO) bool) []UTXO {
 	if m == nil {
 		return base
 	}
+
+	m.prune()
 
 	utxoMap := make(map[string]UTXO, len(base))
 	for _, u := range base {
@@ -137,7 +172,6 @@ func (m *Mempool) Overlay(base []UTXO, filter func(UTXO) bool) []UTXO {
 
 	return res
 }
-
 
 func isZeroHash(h common.Blake2b256) bool {
 	for _, b := range h {

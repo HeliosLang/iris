@@ -16,40 +16,40 @@ type DB struct {
 }
 
 type AssetAddress struct {
-	Address string `json:"address"`
+	Address  string `json:"address"`
 	Quantity string `json:"quantity"` // can be very large, so use string instead of finite precision number (JSON doesn't support unbounded integers, and Golang doesn't have native support for unbounded integers)
 }
 
 type PolicyAsset struct {
-	Asset string `json:"asset"`
+	Asset    string `json:"asset"`
 	Quantity string `json:"quantity"`
 }
 
 type UTXO struct {
-	TxID string `json:"txID"`
-	OutputIndex int `json:"outputIndex"`
-	Address string `json:"address"`
-	Lovelace string `json:"lovelace"`
-	Assets []PolicyAsset `json:"assets,omitempty"`
-	DatumHash string `json:"datumHash,omitempty"`
-	InlineDatum string `json:"inlineDatum,omitempty"`
-	RefScript string `json:"refScript,omitempty"`
-	ConsumedBy string `json:"consumedBy,omitempty"`
+	TxID        string        `json:"txID"`
+	OutputIndex int           `json:"outputIndex"`
+	Address     string        `json:"address"`
+	Lovelace    string        `json:"lovelace"`
+	Assets      []PolicyAsset `json:"assets,omitempty"`
+	DatumHash   string        `json:"datumHash,omitempty"`
+	InlineDatum string        `json:"inlineDatum,omitempty"`
+	RefScript   string        `json:"refScript,omitempty"`
+	ConsumedBy  string        `json:"consumedBy,omitempty"`
 }
 
 type TxBlockInfo struct {
-	Hash string `json:"hash"` // TODO: is this field truly necessary?
-	BlockID string `json:"block"`
-	BlockHeight uint `json:"block_height"`
-	BlockTime uint64 `json:"block_time"`
-	Slot uint64 `json:"slot"`
-	Index uint `json:"index"`
+	Hash        string `json:"hash"` // TODO: is this field truly necessary?
+	BlockID     string `json:"block"`
+	BlockHeight uint   `json:"block_height"`
+	BlockTime   uint64 `json:"block_time"`
+	Slot        uint64 `json:"slot"`
+	Index       uint   `json:"index"`
 }
 
 func NewDB(networkName string) (*DB, error) {
 	ctx := context.Background()
 
-	pool, err := pgxpool.New(ctx, "user=root host=/var/run/postgresql port=5432 dbname=cardano_" + networkName)
+	pool, err := pgxpool.New(ctx, "user=root host=/var/run/postgresql port=5432 dbname=cardano_"+networkName)
 	if err != nil {
 		return nil, fmt.Errorf("unable to connect to Postgres: %v", err)
 	}
@@ -75,27 +75,27 @@ func (db *DB) AddressUTXOs(addr string, ctx context.Context) ([]UTXO, error) {
 	utxos := make([]UTXO, 0)
 
 	var (
-		txID string
-		outputIndex int
-		lovelace string
-		rawAssets *string
-		rawDatumHash *string
+		txID           string
+		outputIndex    int
+		lovelace       string
+		rawAssets      *string
+		rawDatumHash   *string
 		rawInlineDatum *string
-		rawRefScript *string
+		rawRefScript   *string
 	)
 
 	_, err = pgx.ForEachRow(rows, []any{
-		&txID, 
+		&txID,
 		&outputIndex,
 		&lovelace,
 		&rawAssets,
 		&rawDatumHash,
 		&rawInlineDatum,
 		&rawRefScript,
-	}, func () error {
+	}, func() error {
 		assets := []PolicyAsset{}
 
-		if (rawAssets != nil) {
+		if rawAssets != nil {
 			if err := json.Unmarshal([]byte(*rawAssets), &assets); err != nil {
 				return err
 			}
@@ -117,15 +117,15 @@ func (db *DB) AddressUTXOs(addr string, ctx context.Context) ([]UTXO, error) {
 		}
 
 		utxos = append(utxos, UTXO{
-			TxID: txID,
+			TxID:        txID,
 			OutputIndex: outputIndex,
-			Address: addr,
-			Lovelace: lovelace,
-			Assets: assets,
-			DatumHash: datumHash,
+			Address:     addr,
+			Lovelace:    lovelace,
+			Assets:      assets,
+			DatumHash:   datumHash,
 			InlineDatum: inlineDatum,
-			RefScript: refScript,
-			ConsumedBy: "",
+			RefScript:   refScript,
+			ConsumedBy:  "",
 		})
 
 		return nil
@@ -133,7 +133,6 @@ func (db *DB) AddressUTXOs(addr string, ctx context.Context) ([]UTXO, error) {
 
 	return utxos, err
 }
-
 
 func (db *DB) AddressUTXOsWithAsset(addr string, asset string, ctx context.Context) ([]UTXO, error) {
 	conn, err := db.pool.Acquire(ctx)
@@ -151,27 +150,27 @@ func (db *DB) AddressUTXOsWithAsset(addr string, asset string, ctx context.Conte
 	utxos := make([]UTXO, 0)
 
 	var (
-		txID string
-		outputIndex int
-		lovelace string
-		rawAssets *string
-		rawDatumHash *string
+		txID           string
+		outputIndex    int
+		lovelace       string
+		rawAssets      *string
+		rawDatumHash   *string
 		rawInlineDatum *string
-		rawRefScript *string
+		rawRefScript   *string
 	)
 
 	_, err = pgx.ForEachRow(rows, []any{
-		&txID, 
+		&txID,
 		&outputIndex,
 		&lovelace,
 		&rawAssets,
 		&rawDatumHash,
 		&rawInlineDatum,
 		&rawRefScript,
-	}, func () error {
+	}, func() error {
 		assets := []PolicyAsset{}
 
-		if (rawAssets != nil) {
+		if rawAssets != nil {
 			if err := json.Unmarshal([]byte(*rawAssets), &assets); err != nil {
 				return err
 			}
@@ -193,15 +192,15 @@ func (db *DB) AddressUTXOsWithAsset(addr string, asset string, ctx context.Conte
 		}
 
 		utxos = append(utxos, UTXO{
-			TxID: txID,
+			TxID:        txID,
 			OutputIndex: outputIndex,
-			Address: addr,
-			Lovelace: lovelace,
-			Assets: assets,
-			DatumHash: datumHash,
+			Address:     addr,
+			Lovelace:    lovelace,
+			Assets:      assets,
+			DatumHash:   datumHash,
 			InlineDatum: inlineDatum,
-			RefScript: refScript,
-			ConsumedBy: "",
+			RefScript:   refScript,
+			ConsumedBy:  "",
 		})
 
 		return nil
@@ -226,11 +225,11 @@ func (db *DB) AssetAddresses(asset string, ctx context.Context) ([]AssetAddress,
 	addresses := make([]AssetAddress, 0)
 
 	var (
-		address string
+		address  string
 		quantity string
 	)
 
-	_, err = pgx.ForEachRow(rows, []any{&address, &quantity}, func () error {
+	_, err = pgx.ForEachRow(rows, []any{&address, &quantity}, func() error {
 		addresses = append(addresses, AssetAddress{address, quantity})
 
 		return nil
@@ -248,7 +247,7 @@ func (db *DB) CreateIndices() error {
 	}
 
 	defer conn.Release()
-	
+
 	if _, err := conn.Exec(ctx, "CREATE INDEX IF NOT EXISTS idx_block_hash_hex ON block USING HASH (encode(hash, 'hex'))"); err != nil {
 		return err
 	}
@@ -396,7 +395,7 @@ func (db *DB) PolicyAssets(policy string, ctx context.Context) ([]PolicyAsset, e
 	}
 
 	defer conn.Release()
-	
+
 	rows, err := conn.Query(ctx, queries["assets_policy_policy_id"], policy)
 	if err != nil {
 		return nil, err
@@ -405,11 +404,11 @@ func (db *DB) PolicyAssets(policy string, ctx context.Context) ([]PolicyAsset, e
 	assets := make([]PolicyAsset, 0)
 
 	var (
-		asset string
+		asset    string
 		quantity string
 	)
 
-	_, err = pgx.ForEachRow(rows, []any{&asset, &quantity}, func () error {
+	_, err = pgx.ForEachRow(rows, []any{&asset, &quantity}, func() error {
 		assets = append(assets, PolicyAsset{asset, quantity})
 
 		return nil
@@ -429,12 +428,12 @@ func (db *DB) TxBlockInfo(txID string, ctx context.Context) (TxBlockInfo, error)
 	query := conn.QueryRow(ctx, queries["txs_hash_summary"], txID)
 
 	var (
-		hash string
-		block string
+		hash        string
+		block       string
 		blockHeight uint
-		blockTime uint64
-		slot uint64
-		index uint
+		blockTime   uint64
+		slot        uint64
+		index       uint
 	)
 
 	if err := query.Scan(
@@ -458,6 +457,29 @@ func (db *DB) TxBlockInfo(txID string, ctx context.Context) (TxBlockInfo, error)
 	}, nil
 }
 
+func (db *DB) FilterMissingTxs(txIDs []string, ctx context.Context) ([]string, error) {
+	conn, err := db.pool.Acquire(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	defer conn.Release()
+
+	rows, err := conn.Query(ctx, queries["txs_filter_missing"], txIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	missing := make([]string, 0)
+	var id string
+	_, err = pgx.ForEachRow(rows, []any{&id}, func() error {
+		missing = append(missing, id)
+		return nil
+	})
+
+	return missing, err
+}
+
 func (db *DB) UTXO(txID string, outputIndex int, ctx context.Context) (UTXO, error) {
 	conn, err := db.pool.Acquire(ctx)
 	if err != nil {
@@ -469,13 +491,13 @@ func (db *DB) UTXO(txID string, outputIndex int, ctx context.Context) (UTXO, err
 	query := conn.QueryRow(ctx, queries["utxo"], txID, outputIndex)
 
 	var (
-		address string
-		lovelace string
-		rawAssets *string
-		rawDatumHash *string
+		address        string
+		lovelace       string
+		rawAssets      *string
+		rawDatumHash   *string
 		rawInlineDatum *string
-		rawRefScript *string
-		rawConsumedBy *string
+		rawRefScript   *string
+		rawConsumedBy  *string
 	)
 
 	if err := query.Scan(
@@ -492,7 +514,7 @@ func (db *DB) UTXO(txID string, outputIndex int, ctx context.Context) (UTXO, err
 
 	assets := []PolicyAsset{}
 
-	if (rawAssets != nil) {
+	if rawAssets != nil {
 		if err := json.Unmarshal([]byte(*rawAssets), &assets); err != nil {
 			return UTXO{}, err
 		}
@@ -519,14 +541,14 @@ func (db *DB) UTXO(txID string, outputIndex int, ctx context.Context) (UTXO, err
 	}
 
 	return UTXO{
-		TxID: txID,
+		TxID:        txID,
 		OutputIndex: outputIndex,
-		Address: address,
-		Lovelace: lovelace,
-		Assets: assets,
-		DatumHash: datumHash,
+		Address:     address,
+		Lovelace:    lovelace,
+		Assets:      assets,
+		DatumHash:   datumHash,
 		InlineDatum: inlineDatum,
-		RefScript: refScript,
-		ConsumedBy: consumedBy,	
+		RefScript:   refScript,
+		ConsumedBy:  consumedBy,
 	}, nil
 }
