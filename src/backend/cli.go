@@ -200,6 +200,7 @@ func (c *CardanoCLI) DeriveParameters() (HeliosNetworkParams, error) {
 		MaxCollateralInputs:  params.MaxCollateralInputs,
 		MaxTxExCPU:           params.MaxTxExecutionUnits.Steps,
 		MaxTxExMem:           params.MaxTxExecutionUnits.Memory,
+		MaxTxSize:            params.MaxTxSize,
 		RefScriptsFeePerByte: params.MinFeeRefScriptCostPerByte,
 		RefTipSlot:           int64(tip.Slot),
 		RefTipTime:           time.Now().UnixMilli(),

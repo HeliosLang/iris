@@ -447,6 +447,7 @@ type HeliosNetworkParams struct {
 	MaxCollateralInputs  int     `json:"maxCollateralInputs"`
 	MaxTxExCPU           int64   `json:"maxTxExCpu"`
 	MaxTxExMem           int64   `json:"maxTxExMem"`
+	MaxTxSize            int     `json:"maxTxSize"`
 	RefScriptsFeePerByte int     `json:"refScriptsFeePerByte"`
 	RefTipSlot           int64   `json:"refTipSlot"`
 	RefTipTime           int64   `json:"refTipTime"`
