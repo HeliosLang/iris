@@ -7,6 +7,7 @@ import {
     makeAssetClass,
     makeInlineTxOutputDatum,
     makeMintingPolicyHash,
+    makeNetworkParamsHelper,
     makeTxId,
     makeTxInput,
     makeTxOutputId,
@@ -43,6 +44,11 @@ describe("IrisClient", async () => {
             Object.keys(params).length > 5,
             "expected at least 5 entries in network parameters"
         )
+
+        // roundtrip time-to-slot and slot-to-time is the same
+        const helper = makeNetworkParamsHelper(params)
+        const time = 1750768620000
+        strictEqual(helper.slotToTime(helper.timeToSlot(time)), time, "slot-to-time roundtrip not equal")
     })
 
     await it("getTx() returns a known Tx with a UTXO at an expected addr", async () => {

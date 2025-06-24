@@ -203,7 +203,7 @@ func (c *CardanoCLI) DeriveParameters() (HeliosNetworkParams, error) {
 		MaxTxSize:            params.MaxTxSize,
 		RefScriptsFeePerByte: params.MinFeeRefScriptCostPerByte,
 		RefTipSlot:           int64(tip.Slot),
-		RefTipTime:           time.Now().UnixMilli(),
+		RefTipTime:           time.Now().Unix()*1000, // this ensures that the number is properly rounded for downstream use (TODO: all refTipTimes should be in seconds instead of milliseconds)
 		SecondsPerSlot:       1,
 		StakeAddrDeposit:     params.StakeAddressDeposit,
 		TxFeeFixed:           params.TxFeeFixed,
