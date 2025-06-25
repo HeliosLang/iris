@@ -765,8 +765,10 @@ func (h *Handler) submitTxWithDeps(txPath string) (string, error) {
 	for _, badInput := range parsedErr.BadInputs {
 		mempoolTx := h.mempool.GetTx(badInput.TxID)
 		if mempoolTx == nil {
-			return "", fmt.Errorf("bad input not in mempool (%v)", err)
+			return "", fmt.Errorf("bad input %s not in mempool (%v)", badInput.TxID, err)
 		}
+
+		fmt.Printf("found %s in mempool, resubmitting", badInput.TxID)
 
 		// anything in the mempool should also have its content written to its tmp path 
 		_, err := h.submitTxWithDeps(getTxTmpPath(mempoolTx))

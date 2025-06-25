@@ -1,6 +1,8 @@
 package main
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestParseTxSubmitError(t *testing.T) {
 	tests := []struct {
@@ -38,6 +40,31 @@ func TestParseTxSubmitError(t *testing.T) {
 				}
 				if len(e.BadInputs) != 1 {
 					t.Fatalf("bad inputs not parsed")
+				}
+			},
+		},
+		{
+			name: "4 bad inputs",
+			errStr: "ShelleyTxValidationError ShelleyBasedEraConway (ApplyTxError (ConwayUtxowFailure (UtxoFailure (BadInputsUTxO (fromList [TxIn (TxId {unTxId = SafeHash \"78ea3295609e6e7ae995774ebe924dc408accac86e1f8e972544fd6f25fb1049\"}) (TxIx {unTxIx = 0}),TxIn (TxId {unTxId = SafeHash \"cc2c9969c7a4e2f05170a2194cbd8edd11052f1ef072efbf4d133702cf8030e4\"}) (TxIx {unTxIx = 0}),TxIn (TxId {unTxId = SafeHash \"cc2c9969c7a4e2f05170a2194cbd8edd11052f1ef072efbf4d133702cf8030e4\"}) (TxIx {unTxIx = 1}),TxIn (TxId {unTxId = SafeHash \"f0cd1c37b54f70de78f4ebfb3db614847f8c5cc1f18d3a2e46c0e9fcd2d65ad2\"}) (TxIx {unTxIx = 0})]))) :| [ConwayUtxowFailure (UtxoFailure (ValueNotConservedUTxO (Mismatch {mismatchSupplied = MaryValue (Coin 0) (MultiAsset (fromList [])), mismatchExpected = MaryValue (Coin 7722228977) (MultiAsset (fromList [(PolicyID {policyID = ScriptHash \"737693ec75c198b82cc287418cddd90d762fda772814fd228e74bad7\"},fromList [(\"\",1)]),(PolicyID {policyID = ScriptHash \"be17b2cf8929e567bd635a32d808eb62e20833bffbeeedaa8fa353a4\"},fromList [(\"\",1)]),(PolicyID {policyID = ScriptHash \"de4a9efee37ff7bb123dd09d5e73e5f092e22bc1728e8baca30d5c21\"},fromList [(\"\",1)])]))})))]))",
+			check: func(t *testing.T, e CardanoCLITxSubmitError) {
+				if len(e.BadInputs) != 4 {
+					t.Fatalf("bad inputs not parsed")
+				}
+
+				if e.BadInputs[0].TxID != "78ea3295609e6e7ae995774ebe924dc408accac86e1f8e972544fd6f25fb1049" {
+					t.Fatalf("unexpected 1st bad input")
+				}
+
+				if e.BadInputs[1].TxID != "cc2c9969c7a4e2f05170a2194cbd8edd11052f1ef072efbf4d133702cf8030e4" {
+					t.Fatalf("unexpected 2nd bad input")
+				}
+
+				if e.BadInputs[2].TxID != "cc2c9969c7a4e2f05170a2194cbd8edd11052f1ef072efbf4d133702cf8030e4" {
+					t.Fatalf("unexpected 3rd bad input")
+				}
+
+				if e.BadInputs[3].TxID != "f0cd1c37b54f70de78f4ebfb3db614847f8c5cc1f18d3a2e46c0e9fcd2d65ad2" {
+					t.Fatalf("unexpected 4th bad input")
 				}
 			},
 		},
