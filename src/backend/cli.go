@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -146,6 +147,34 @@ type CardanoCLITip struct {
 	SyncProgress    string `json:"syncProgress"`
 }
 
+// CardanoTxIn represents a transaction input.
+type CardanoTxIn struct {
+	TxID  string `json:"txID"`
+	Index int    `json:"index"`
+}
+
+// CardanoValueMismatch is returned when values are not conserved.
+type CardanoValueMismatch struct {
+	Supplied int64 `json:"supplied"`
+	Expected int64 `json:"expected"`
+}
+
+// CardanoCollateralInfo describes insufficient collateral errors.
+type CardanoCollateralInfo struct {
+	Delta    int64 `json:"delta"`
+	Provided int64 `json:"provided"`
+}
+
+// CardanoCLITxSubmitError represents a parsed transaction submission error.
+type CardanoCLITxSubmitError struct {
+	Raw                    string                 `json:"raw"`
+	BadInputs              []CardanoTxIn          `json:"badInputs,omitempty"`
+	MissingInputs          []CardanoTxIn          `json:"missingInputs,omitempty"`
+	ValueMismatch          *CardanoValueMismatch  `json:"valueMismatch,omitempty"`
+	InsufficientCollateral *CardanoCollateralInfo `json:"insufficientCollateral,omitempty"`
+	NoCollateralInputs     bool                   `json:"noCollateralInputs,omitempty"`
+}
+
 func (c *CardanoCLI) Tip() (CardanoCLITip, error) {
 	obj, err := c.invoke(
 		"query", "tip",
@@ -195,7 +224,7 @@ func (c *CardanoCLI) ConvertSlotToTime(slot uint64) (time.Time, error) {
 func (c *CardanoCLI) GetRefTimeAndSlot() (time.Time, uint64, error) {
 	// remove ms
 	// this ensures that the number is properly rounded for downstream use (TODO: all refTipTimes should be in seconds instead of milliseconds)
-	refTime := time.Unix(time.Now().Unix(), 0) 
+	refTime := time.Unix(time.Now().Unix(), 0)
 
 	refSlot, err := c.ConvertTimeToSlot(refTime)
 
@@ -226,7 +255,7 @@ func (c *CardanoCLI) DeriveParameters() (HeliosNetworkParams, error) {
 		MaxTxSize:            params.MaxTxSize,
 		RefScriptsFeePerByte: params.MinFeeRefScriptCostPerByte,
 		RefTipSlot:           int64(refSlot),
-		RefTipTime:           refTime.Unix()*1000, 
+		RefTipTime:           refTime.Unix() * 1000,
 		SecondsPerSlot:       1,
 		StakeAddrDeposit:     params.StakeAddressDeposit,
 		TxFeeFixed:           params.TxFeeFixed,
@@ -282,4 +311,46 @@ func (c *CardanoCLI) invoke(args ...string) (string, error) {
 	}
 
 	return stdout.String(), nil
+}
+
+// ParseTxSubmitError parses transaction submission errors returned by cardano-cli.
+func ParseTxSubmitError(msg string) CardanoCLITxSubmitError {
+	res := CardanoCLITxSubmitError{Raw: msg}
+
+	reInsuf := regexp.MustCompile(`InsufficientCollateral \(DeltaCoin \((-?\d+)\)\) \(Coin (\d+)\)`)
+	if m := reInsuf.FindStringSubmatch(msg); m != nil {
+		delta, _ := strconv.ParseInt(m[1], 10, 64)
+		provided, _ := strconv.ParseInt(m[2], 10, 64)
+		res.InsufficientCollateral = &CardanoCollateralInfo{Delta: delta, Provided: provided}
+	}
+
+	if strings.Contains(msg, "NoCollateralInputs") {
+		res.NoCollateralInputs = true
+	}
+
+	reMismatch := regexp.MustCompile(`ValueNotConservedUTxO .*?Coin ([0-9]+).*?Coin ([0-9]+)`)
+	if m := reMismatch.FindStringSubmatch(msg); m != nil {
+		supplied, _ := strconv.ParseInt(m[1], 10, 64)
+		expected, _ := strconv.ParseInt(m[2], 10, 64)
+		res.ValueMismatch = &CardanoValueMismatch{Supplied: supplied, Expected: expected}
+	}
+
+	reBadInputs := regexp.MustCompile(`BadInputsUTxO \(fromList \[(.*?)\]\)`)
+	if m := reBadInputs.FindStringSubmatch(msg); m != nil {
+		txins := m[1]
+		reTxIn := regexp.MustCompile(`TxIn \(TxId {unTxId = SafeHash \"([0-9a-f]+)\"}\) \(TxIx {unTxIx = ([0-9]+)}\)`)
+		matches := reTxIn.FindAllStringSubmatch(txins, -1)
+		for _, tm := range matches {
+			idx, _ := strconv.Atoi(tm[2])
+			res.BadInputs = append(res.BadInputs, CardanoTxIn{TxID: tm[1], Index: idx})
+		}
+	}
+
+	reMissing := regexp.MustCompile(`TranslationLogicMissingInput \(TxIn \(TxId {unTxId = SafeHash \"([0-9a-f]+)\"}\) \(TxIx {unTxIx = ([0-9]+)}\)\)`)
+	if m := reMissing.FindStringSubmatch(msg); m != nil {
+		idx, _ := strconv.Atoi(m[2])
+		res.MissingInputs = append(res.MissingInputs, CardanoTxIn{TxID: m[1], Index: idx})
+	}
+
+	return res
 }
