@@ -734,7 +734,7 @@ func (h *Handler) submitTx(w http.ResponseWriter, r *http.Request) {
 		if tx, err := ledger.NewTransactionFromCbor(txType, txBytes); err == nil {
 			ttlTime := time.Now().Add(10 * time.Minute)
 			if ttl := tx.TTL(); ttl != 0 {
-				if t, err := h.cli.ConvertSlotsToTime(ttl); err == nil {
+				if t, err := h.cli.ConvertSlotToTime(ttl); err == nil {
 					if t.Before(ttlTime) {
 						ttlTime = t
 					}

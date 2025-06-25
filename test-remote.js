@@ -247,5 +247,8 @@ describe("IrisClient", async () => {
                 console.log("  and first UTXO fetched immediately after")
             }
         })
+
+        // TODO: a special test, that checks that an on-chain datum contains the off-chain time range start
+        
     }
 })

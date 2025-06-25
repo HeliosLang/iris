@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -162,21 +163,31 @@ func (c *CardanoCLI) Tip() (CardanoCLITip, error) {
 	return tip, nil
 }
 
+func (c *CardanoCLI) ConvertTimeToSlot(t time.Time) (uint64, error) {
+	obj, err := c.invoke(
+		"query", "slot-number", t.UTC().Format("2006-01-02T15:04:05Z"),
+	)
+
+	if err != nil {
+		return 0, err
+	}
+
+	return strconv.ParseUint(obj, 10, 64)
+}
+
 // ConvertSlotsToTime returns the future time at which the given slot number
 // will be reached. The provided slot must be an absolute slot number.
 // The current tip is fetched to determine the offset.
-func (c *CardanoCLI) ConvertSlotsToTime(slot uint64) (time.Time, error) {
-	tip, err := c.Tip()
+func (c *CardanoCLI) ConvertSlotToTime(slot uint64) (time.Time, error) {
+	t := time.Now()
+	s, err := c.ConvertTimeToSlot(t)
 	if err != nil {
 		return time.Time{}, err
 	}
 
-	diff := int64(slot) - int64(tip.Slot)
-	if diff < 0 {
-		diff = 0
-	}
+	diff := int64(slot) - int64(s)
 
-	return time.Now().Add(time.Duration(diff) * time.Second), nil
+	return t.Add(time.Duration(diff) * time.Second), nil
 }
 
 func (c *CardanoCLI) DeriveParameters() (HeliosNetworkParams, error) {
