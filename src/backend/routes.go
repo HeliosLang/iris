@@ -32,6 +32,7 @@ type Handler struct {
 	paramsCache *ParametersCache
 	mempool     *Mempool
 	selector    *CoinSelector
+	mu          sync.RWMutex // top-level RW Mutex. All read queries should call RLock, and all write queries should call Lock
 }
 
 type ParametersCache struct {
@@ -74,6 +75,7 @@ func NewHandler(networkName string) (*Handler, error) {
 		&ParametersCache{},
 		NewMempool(),
 		NewCoinSelector(),
+		sync.RWMutex{},
 	}
 
 	go func() {
@@ -188,11 +190,10 @@ func (h *Handler) address(w http.ResponseWriter, r *http.Request, url URLHelper)
 	}
 }
 
+// read query
 func (h *Handler) addressUTXOs(w http.ResponseWriter, r *http.Request, addr string) {
-	if r.Method != http.MethodGet {
-		invalidMethod(w, r)
-		return
-	}
+	h.mu.RLock()
+	defer h.mu.RUnlock()
 
 	asset := ""
 	if vals, ok := r.URL.Query()["asset"]; ok {
@@ -212,51 +213,13 @@ func (h *Handler) addressUTXOs(w http.ResponseWriter, r *http.Request, addr stri
 	respondWithUTXOs(w, r, obj)
 }
 
-func (h *Handler) getAddressUTXOs(ctx context.Context, addr string, asset string) ([]UTXO, error) {
-	var (
-		obj    []UTXO
-		err    error
-		filter func(UTXO) bool
-	)
-
-	if asset != "" {
-		obj, err = h.db.AddressUTXOsWithAsset(addr, asset, ctx)
-		if err != nil {
-			return nil, err
-		}
-
-		lower := strings.ToLower(asset)
-		if lower != "lovelace" {
-			filter = func(u UTXO) bool {
-				if u.Address != addr {
-					return false
-				}
-				for _, a := range u.Assets {
-					if strings.EqualFold(a.Asset, asset) {
-						return true
-					}
-				}
-				return false
-			}
-		} else {
-			filter = func(u UTXO) bool { return u.Address == addr && len(u.Assets) == 0 }
-		}
-	} else {
-		obj, err = h.db.AddressUTXOs(addr, ctx)
-		if err != nil {
-			return nil, err
-		}
-
-		filter = func(u UTXO) bool { return u.Address == addr }
-	}
-
-	obj = h.mempool.Overlay(obj, filter)
-
-	return obj, nil
-}
-
+// write query
 func (h *Handler) selectUTXOs(w http.ResponseWriter, r *http.Request, addr string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
 	var req SelectRequest
+
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, fmt.Sprintf("failed to decode request: %v", err), http.StatusBadRequest)
 		return
@@ -328,6 +291,50 @@ func (h *Handler) selectUTXOs(w http.ResponseWriter, r *http.Request, addr strin
 	respondWithUTXOs(w, r, selected)
 }
 
+// internal method used by addressUTXOs and selectUTXOs
+func (h *Handler) getAddressUTXOs(ctx context.Context, addr string, asset string) ([]UTXO, error) {
+	var (
+		obj    []UTXO
+		err    error
+		filter func(UTXO) bool
+	)
+
+	if asset != "" {
+		obj, err = h.db.AddressUTXOsWithAsset(addr, asset, ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		lower := strings.ToLower(asset)
+		if lower != "lovelace" {
+			filter = func(u UTXO) bool {
+				if u.Address != addr {
+					return false
+				}
+				for _, a := range u.Assets {
+					if strings.EqualFold(a.Asset, asset) {
+						return true
+					}
+				}
+				return false
+			}
+		} else {
+			filter = func(u UTXO) bool { return u.Address == addr && len(u.Assets) == 0 }
+		}
+	} else {
+		obj, err = h.db.AddressUTXOs(addr, ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		filter = func(u UTXO) bool { return u.Address == addr }
+	}
+
+	obj = h.mempool.Overlay(obj, filter)
+
+	return obj, nil
+}
+
 func (h *Handler) block(w http.ResponseWriter, r *http.Request, url URLHelper) {
 	blockID, url := url.Pop()
 
@@ -370,6 +377,7 @@ func (h *Handler) blockBytes(w http.ResponseWriter, r *http.Request, blockID str
 	respondWithCBOR(w, r, block.Cbor())
 }
 
+// read query, but doesn't depend on recent write operations, so no need to lock
 func (h *Handler) blockTx(w http.ResponseWriter, r *http.Request, url URLHelper, blockID string) {
 	if r.Method != "GET" {
 		invalidMethod(w, r)
@@ -422,6 +430,7 @@ func (h *Handler) chain(w http.ResponseWriter, r *http.Request, url URLHelper) {
 	}
 }
 
+// read query, but doesnt depend on recent write operations, so no need to lock
 func (h *Handler) chainTip(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" {
 		invalidMethod(w, r)
@@ -458,6 +467,7 @@ type HeliosNetworkParams struct {
 	UTXODepositPerByte   int     `json:"utxoDepositPerByte"`
 }
 
+// read query, but doesn't depend on recent write operations, so no need to lock the global mutex
 func (h *Handler) parameters(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" {
 		invalidMethod(w, r)
@@ -574,6 +584,7 @@ func (h *Handler) policyAssetAddresses(w http.ResponseWriter, r *http.Request, a
 		return
 	}
 
+	// TODO: overlay recent TXs
 	addresses, err := h.db.AssetAddresses(asset, r.Context())
 	if err != nil {
 		internalError(w, err)
@@ -589,6 +600,7 @@ func (h *Handler) policyAssets(w http.ResponseWriter, r *http.Request, policy []
 		return
 	}
 
+	// TODO: overlay recent txs
 	assets, err := h.db.PolicyAssets(hex.EncodeToString(policy), r.Context())
 	if err != nil {
 		internalError(w, err)
@@ -630,7 +642,11 @@ type TxEnvelope struct {
 	Description string `json:"description,omitempty"`
 }
 
+// write query
 func (h *Handler) submitTx(w http.ResponseWriter, r *http.Request) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
 	if r.Method != "POST" {
 		invalidMethod(w, r)
 		return
@@ -734,7 +750,11 @@ func (h *Handler) submitTx(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// read query
 func (h *Handler) txContent(w http.ResponseWriter, r *http.Request, txID string) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
 	if r.Method != "GET" {
 		invalidMethod(w, r)
 		return
@@ -768,6 +788,7 @@ func (h *Handler) txContent(w http.ResponseWriter, r *http.Request, txID string)
 	respondWithCBOR(w, r, tx.Cbor())
 }
 
+// read query, but doesn't depend on recent write operations, so don't lock mutex
 func (h *Handler) txBlockInfo(w http.ResponseWriter, r *http.Request, txID string) {
 	if r.Method != "GET" {
 		invalidMethod(w, r)
@@ -784,7 +805,11 @@ func (h *Handler) txBlockInfo(w http.ResponseWriter, r *http.Request, txID strin
 	respondWithJSON(w, txBlockInfo)
 }
 
+// read query
 func (h *Handler) txOutput(w http.ResponseWriter, r *http.Request, url URLHelper, txID string) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
 	if r.Method != "GET" {
 		invalidMethod(w, r)
 		return
@@ -796,23 +821,34 @@ func (h *Handler) txOutput(w http.ResponseWriter, r *http.Request, url URLHelper
 		return
 	}
 
-	index, err := strconv.ParseUint(indexStr, 10, 32)
+	outputIndex, err := strconv.ParseUint(indexStr, 10, 32)
 	if err != nil {
 		invalidEndpoint(w, r)
 		return
 	}
 
-	cbor, err := h.cli.UTXO(txID, int(index))
-	if err != nil {
-		internalError(w, err)
-		return
-	}
+	var cbor []byte
 
-	if cbor == nil {
-		http.Error(w, fmt.Sprintf("UTXO %s#%d not found", txID, index), http.StatusNotFound)
-		return
-	}
+	if utxo, found := h.mempool.GetUTXO(txID, int(outputIndex)); found {
+		cbor, err = EncodeUTXO(utxo)
+		if err != nil {
+			internalError(w, err)
+			return
+		}
+	} else {
+		// TODO: what about spent outputs?
+		cbor, err = h.cli.UTXO(txID, int(outputIndex))
+		if err != nil {
+			internalError(w, err)
+			return
+		}
 
+		if cbor == nil {
+			http.Error(w, fmt.Sprintf("Tx output %s#%d not found", txID, outputIndex), http.StatusNotFound)
+			return
+		}	
+	}
+	
 	respondWithCBOR(w, r, cbor)
 }
 
@@ -851,11 +887,24 @@ func (h *Handler) utxo(w http.ResponseWriter, r *http.Request, url URLHelper) {
 	}
 }
 
+// read query
 func (h *Handler) utxoContent(w http.ResponseWriter, r *http.Request, txID string, outputIndex int) {
-	utxo, err := h.db.UTXO(txID, outputIndex, r.Context())
-	if err != nil {
-		http.Error(w, fmt.Sprintf("UTXO %s#%d not found (%v)", txID, outputIndex, err), http.StatusNotFound)
-		return
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	var (
+		utxo UTXO
+		found bool
+		err error
+	)
+
+	utxo, found = h.mempool.GetUTXO(txID, outputIndex)
+	if !found {
+		utxo, err = h.db.UTXO(txID, outputIndex, r.Context())
+		if err != nil {
+			http.Error(w, fmt.Sprintf("UTXO %s#%d not found (%v)", txID, outputIndex, err), http.StatusNotFound)
+			return
+		}
 	}
 
 	code := http.StatusOK
@@ -877,7 +926,11 @@ func (h *Handler) utxoContent(w http.ResponseWriter, r *http.Request, txID strin
 	}
 }
 
+// read query
 func (h *Handler) mempoolTxs(w http.ResponseWriter, r *http.Request) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
 	if r.Method != "GET" {
 		invalidMethod(w, r)
 		return

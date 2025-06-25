@@ -62,6 +62,25 @@ func (m *Mempool) GetTx(txID string) ledger.Transaction {
 	}
 }
 
+func (m *Mempool) GetUTXO(txID string, outputIndex int) (UTXO, bool) {
+	if m == nil {
+		return UTXO{}, false
+	}
+
+	tx := m.GetTx(txID)
+	if tx == nil {
+		return UTXO{}, false
+	}
+
+	for i, prod := range tx.Produced() {
+		if i == outputIndex {
+			return ledgerUtxoToUTXO(prod), true
+		}
+	}
+
+	return UTXO{}, false
+}
+
 // Prune removes transactions whose TTL has expired.
 func (m *Mempool) Prune() {
 	if m == nil {
