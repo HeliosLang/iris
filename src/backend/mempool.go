@@ -13,6 +13,7 @@ import (
 	"github.com/blinklabs-io/gouroboros/ledger"
 	"github.com/blinklabs-io/gouroboros/ledger/babbage"
 	"github.com/blinklabs-io/gouroboros/ledger/common"
+	"golang.org/x/crypto/blake2b"
 )
 
 // MempoolTx represents a transaction tracked in the mempool.
@@ -226,7 +227,13 @@ func ledgerUtxoToUTXO(u common.Utxo) UTXO {
 
 	inlineDatum := ""
 	if d := u.Output.Datum(); d != nil {
-		inlineDatum = hex.EncodeToString(d.Cbor())
+		datumCBOR := d.Cbor()
+
+		inlineDatum = hex.EncodeToString(datumCBOR)
+
+		if datumHash == "" {
+			datumHash = HashDatum(datumCBOR)
+		}
 	}
 
 	refScript := ""
@@ -251,4 +258,9 @@ func ledgerUtxoToUTXO(u common.Utxo) UTXO {
 		InlineDatum: inlineDatum,
 		RefScript:   refScript,
 	}
+}
+
+func HashDatum(cbor []byte) string {
+	bs := blake2b.Sum256(cbor)
+	return hex.EncodeToString(bs[:])
 }
