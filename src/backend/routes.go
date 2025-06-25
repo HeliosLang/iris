@@ -21,7 +21,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/blinklabs-io/gouroboros/ledger"
-	"github.com/google/uuid"
 )
 
 type Handler struct {
@@ -703,51 +702,94 @@ func (h *Handler) submitTx(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// save the tx JSON representation to a temporary file
-	tx := TxEnvelope{
-		hex.EncodeToString(txBytes),
-		"Witnessed Tx ConwayEra", // TODO: automatic updating during hardforks
-		"Submitted through the Helios gateway",
-	}
-
-	content, err := json.Marshal(tx)
+	tx, err := decodeTx(txBytes)
 	if err != nil {
 		internalError(w, err)
 		return
 	}
 
-	txPath := "/tmp/" + uuid.New().String()
+	// save the tx JSON representation to a temporary file
+	txEnv := TxEnvelope{
+		hex.EncodeToString(txBytes),
+		"Witnessed Tx ConwayEra", // TODO: automatic updating during hardforks
+		"Submitted through the Helios gateway",
+	}
+
+	content, err := json.Marshal(txEnv)
+	if err != nil {
+		internalError(w, err)
+		return
+	}
+
+	txPath := getTxTmpPath(tx)
 	if err := os.WriteFile(txPath, content, 0444); err != nil {
 		internalError(w, err)
 		return
 	}
 
-	result, err := h.cli.SubmitTx(txPath)
+	result, err := h.submitTxWithDeps(txPath)
 	if err != nil {
 		internalError(w, err)
 		return
 	}
 
 	// save to mempool
-	txType, err := ledger.DetermineTransactionType(txBytes)
-	if err == nil {
-		if tx, err := ledger.NewTransactionFromCbor(txType, txBytes); err == nil {
-			ttlTime := time.Now().Add(10 * time.Minute)
-			if ttl := tx.TTL(); ttl != 0 {
-				if t, err := h.cli.ConvertSlotToTime(ttl); err == nil {
-					if t.Before(ttlTime) {
-						ttlTime = t
-					}
-				}
+	ttlTime := time.Now().Add(10 * time.Minute)
+	if ttl := tx.TTL(); ttl != 0 {
+		if t, err := h.cli.ConvertSlotToTime(ttl); err == nil {
+			if t.Before(ttlTime) {
+				ttlTime = t
 			}
-			h.mempool.AddTx(tx, ttlTime)
 		}
 	}
+	h.mempool.AddTx(tx, ttlTime)
 
 	if _, err := w.Write([]byte(result)); err != nil {
 		internalError(w, err)
 		return
 	}
+}
+
+func (h *Handler) submitTxWithDeps(txPath string) (string, error) {
+	result, err := h.cli.SubmitTx(txPath)
+	if err == nil {
+		return result, nil
+	}
+
+	parsedErr := ParseTxSubmitError(err.Error())
+
+	if len(parsedErr.BadInputs) == 0 {
+		return "", err
+	}
+
+	for _, badInput := range parsedErr.BadInputs {
+		mempoolTx := h.mempool.GetTx(badInput.TxID)
+		if mempoolTx == nil {
+			return "", fmt.Errorf("bad input not in mempool (%v)", err)
+		}
+
+		// anything in the mempool should also have its content written to its tmp path 
+		_, err := h.submitTxWithDeps(getTxTmpPath(mempoolTx))
+		if err != nil {
+			return "", err
+		}
+	}
+
+	// retry, with all mempool txs recently submitted
+	return h.cli.SubmitTx(txPath)
+}
+
+func getTxTmpPath(tx ledger.Transaction) string {
+	return "/tmp/" + tx.Hash().String()
+}
+
+func decodeTx(txBytes []byte) (ledger.Transaction, error) {
+	txType, err := ledger.DetermineTransactionType(txBytes)
+	if err != nil {
+		return nil, err
+	}
+
+	return ledger.NewTransactionFromCbor(txType, txBytes)
 }
 
 // read query
