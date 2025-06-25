@@ -241,6 +241,10 @@ describe("IrisClient", async () => {
                 await client.getTx(id)
 
                 console.log("  and fetched immediately after")
+
+                await client.getUtxo(makeTxOutputId(id, 0))
+
+                console.log("  and first UTXO fetched immediately after")
             }
         })
     }
