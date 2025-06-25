@@ -18,6 +18,9 @@ importers:
       '@helios-lang/codec-utils':
         specifier: ^0.3.4
         version: 0.3.4
+      '@helios-lang/compiler':
+        specifier: ^0.17.22
+        version: 0.17.22
       '@helios-lang/ledger':
         specifier: ^0.7.12
         version: 0.7.12
@@ -315,11 +318,17 @@ packages:
   '@helios-lang/compiler-utils@0.5.15':
     resolution: {integrity: sha512-tPI92av0d4eOR4a2U1ORNeT2Sanc9AvvoNQn9aZHSSn10rW1AvDnqd7L4Zj0cjc9uT6BD4wFv0jVdr3gECODVQ==}
 
+  '@helios-lang/compiler@0.17.22':
+    resolution: {integrity: sha512-J1c+shoVnLF2npGJ1x3iJK6gmv6MVtNsxOznAUS21QofVfCUA3coe7NFfLhw8kkW9pM/cqUy9Z8ucyObvHFzCw==}
+
   '@helios-lang/crypto@0.2.3':
     resolution: {integrity: sha512-Vyauv8fSrev2BFVn5RrHvMtgHzClogWFnX9CPm8024NEzlEL6jrXYiF8VAoegWX46GGZQE2ZEZxZciiKClaR3A==}
 
   '@helios-lang/era@0.1.5':
     resolution: {integrity: sha512-r6ZyLSVNMPqgMXhdtXumx3JGQ24QmCST77CmXypF0UaLzgZBj19bUt2UGX7P8MNth4VRlKsT42EqEfMh7KirsA==}
+
+  '@helios-lang/ir@0.3.9':
+    resolution: {integrity: sha512-uWEPBftVkBCECq2DFPMNAa+o6VpnYKgHefCvjwiTpD7xqL0tl+z5y3U/W3AvHmdgCXMu+Z8JG6iaheSSggmdqA==}
 
   '@helios-lang/ledger@0.7.12':
     resolution: {integrity: sha512-+sBWuhC5jc3UIvwEHwjhmAfcq1GAyPUDM8i8Y03CI+5EXQV5DEvEd0f6PTve1cMn4U6sO6celPjKOT8VkiJZig==}
@@ -1011,12 +1020,27 @@ snapshots:
       '@helios-lang/codec-utils': 0.3.4
       '@helios-lang/type-utils': 0.2.9
 
+  '@helios-lang/compiler@0.17.22':
+    dependencies:
+      '@helios-lang/codec-utils': 0.3.4
+      '@helios-lang/compiler-utils': 0.5.15
+      '@helios-lang/ir': 0.3.9
+      '@helios-lang/type-utils': 0.3.0
+      '@helios-lang/uplc': 0.7.17
+
   '@helios-lang/crypto@0.2.3':
     dependencies:
       '@helios-lang/codec-utils': 0.3.4
       '@helios-lang/type-utils': 0.2.9
 
   '@helios-lang/era@0.1.5': {}
+
+  '@helios-lang/ir@0.3.9':
+    dependencies:
+      '@helios-lang/codec-utils': 0.3.4
+      '@helios-lang/compiler-utils': 0.5.15
+      '@helios-lang/type-utils': 0.2.9
+      '@helios-lang/uplc': 0.7.17
 
   '@helios-lang/ledger@0.7.12':
     dependencies:

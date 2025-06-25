@@ -1,6 +1,7 @@
 import assert, { strictEqual } from "node:assert"
 import { describe, it } from "node:test"
 import { hexToBytes } from "@helios-lang/codec-utils"
+import { Program } from "@helios-lang/compiler"
 import {
     addValues,
     makeAddress,
@@ -168,16 +169,17 @@ describe("IrisClient", async () => {
     })
 
     if (phrase != "") {
+        const key = restoreRootPrivateKey(phrase.split(" "))
+
         // | n   | blockfrost | iris |
         // | 10  | ok         | ok   |
         // | 25  | ok         | ok   |
         // | 50  | ok         | ok   |
         // | 100 | ok         | ok   |
         // | 500 | ok         | ok   |
-
         const n = 5
         await it(`tx chain with ${n} txs`, async () => {
-            const key = restoreRootPrivateKey(phrase.split(" "))
+            
             const unchainedWallet = makeUnstakedSimpleWallet(key, client)
             console.log(`Test wallet address: ${unchainedWallet.address.toString()}`)
 
@@ -249,6 +251,34 @@ describe("IrisClient", async () => {
         })
 
         // TODO: a special test, that checks that an on-chain datum contains the off-chain time range start
+        await it("converts slot to time correctly", async () => {
+            const validator = new Program(`minting time_range_start
+            import { tx } from ScriptContext    
+            func main(r: Int) -> Bool {
+                Time::new(r) == tx.time_range.start
+            }`)
+            const params = await client.parameters
+
+            const uplc = validator.compile({optimize: false})
+            const mph = makeMintingPolicyHash(uplc.hash())
+
+            const wallet = makeUnstakedSimpleWallet(key, client)
+            const t = (Math.round(Date.now()/1000) - 90)*1000
+            const tx = await makeTxBuilder({isMainnet: false})
+                .attachUplcProgram(uplc)
+                .mintAssetClassUnsafe(makeAssetClass(mph, []), 1, makeIntData(t))
+                .validFromTime(t)
+                .build({
+                    changeAddress: wallet.address,
+                    spareUtxos: wallet.utxos,
+                    networkParams: params
+                })
+
+            console.log(`ref slot: ${params.refTipSlot}, ref time: ${params.refTipTime}`)
+            console.log(`tx start slot: ${tx.body.firstValidSlot}, tx start time: ${t}`)
+            tx.addSignatures(await wallet.signTx(tx))
+            await client.submitTx(tx)
+        })
         
     }
 })

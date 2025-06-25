@@ -164,8 +164,11 @@ func (c *CardanoCLI) Tip() (CardanoCLITip, error) {
 }
 
 func (c *CardanoCLI) ConvertTimeToSlot(t time.Time) (uint64, error) {
+	f := t.UTC().Format("2006-01-02T15:04:05Z")
+
+	//fmt.Printf("refTime in seconds: %d, refTime formatted: %s", t.Unix(), f)
 	obj, err := c.invoke(
-		"query", "slot-number", t.UTC().Format("2006-01-02T15:04:05Z"),
+		"query", "slot-number", f,
 	)
 
 	if err != nil {
@@ -179,15 +182,24 @@ func (c *CardanoCLI) ConvertTimeToSlot(t time.Time) (uint64, error) {
 // will be reached. The provided slot must be an absolute slot number.
 // The current tip is fetched to determine the offset.
 func (c *CardanoCLI) ConvertSlotToTime(slot uint64) (time.Time, error) {
-	t := time.Now()
-	s, err := c.ConvertTimeToSlot(t)
+	refTime, refSlot, err := c.GetRefTimeAndSlot()
 	if err != nil {
 		return time.Time{}, err
 	}
 
-	diff := int64(slot) - int64(s)
+	diff := int64(slot) - int64(refSlot)
 
-	return t.Add(time.Duration(diff) * time.Second), nil
+	return refTime.Add(time.Duration(diff) * time.Second), nil
+}
+
+func (c *CardanoCLI) GetRefTimeAndSlot() (time.Time, uint64, error) {
+	// remove ms
+	// this ensures that the number is properly rounded for downstream use (TODO: all refTipTimes should be in seconds instead of milliseconds)
+	refTime := time.Unix(time.Now().Unix(), 0) 
+
+	refSlot, err := c.ConvertTimeToSlot(refTime)
+
+	return refTime, refSlot, err
 }
 
 func (c *CardanoCLI) DeriveParameters() (HeliosNetworkParams, error) {
@@ -196,7 +208,7 @@ func (c *CardanoCLI) DeriveParameters() (HeliosNetworkParams, error) {
 		return HeliosNetworkParams{}, err
 	}
 
-	tip, err := c.Tip()
+	refTime, refSlot, err := c.GetRefTimeAndSlot()
 	if err != nil {
 		return HeliosNetworkParams{}, err
 	}
@@ -213,8 +225,8 @@ func (c *CardanoCLI) DeriveParameters() (HeliosNetworkParams, error) {
 		MaxTxExMem:           params.MaxTxExecutionUnits.Memory,
 		MaxTxSize:            params.MaxTxSize,
 		RefScriptsFeePerByte: params.MinFeeRefScriptCostPerByte,
-		RefTipSlot:           int64(tip.Slot),
-		RefTipTime:           time.Now().Unix()*1000, // this ensures that the number is properly rounded for downstream use (TODO: all refTipTimes should be in seconds instead of milliseconds)
+		RefTipSlot:           int64(refSlot),
+		RefTipTime:           refTime.Unix()*1000, 
 		SecondsPerSlot:       1,
 		StakeAddrDeposit:     params.StakeAddressDeposit,
 		TxFeeFixed:           params.TxFeeFixed,
