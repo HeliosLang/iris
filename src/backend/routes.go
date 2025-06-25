@@ -73,7 +73,7 @@ func NewHandler(networkName string) (*Handler, error) {
 		db,
 		store,
 		&ParametersCache{},
-		NewMempool(),
+		NewMempool(db),
 		NewCoinSelector(),
 		sync.RWMutex{},
 	}
@@ -936,7 +936,7 @@ func (h *Handler) mempoolTxs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.mempool.Prune()
+	h.mempool.prune()
 
 	hashes := h.mempool.Hashes()
 
