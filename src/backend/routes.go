@@ -795,11 +795,11 @@ func (h *Handler) submitTx(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// save the tx JSON representation to a temporary file
-	txEnv := TxEnvelope{
-		hex.EncodeToString(txBytes),
-		"Witnessed Tx ConwayEra", // TODO: automatic updating during hardforks
-		"Submitted through the Helios gateway",
-	}
+       txEnv := TxEnvelope{
+               hex.EncodeToString(txBytes),
+               "Tx ConwayEra", // TODO: automatic updating during hardforks
+               "Submitted through the Helios gateway",
+       }
 
 	content, err := json.Marshal(txEnv)
 	if err != nil {
