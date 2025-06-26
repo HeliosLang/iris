@@ -282,7 +282,8 @@ describe("IrisClient", async () => {
             tx.addSignatures(await wallet.signTx(tx))
 
             try {
-                await client.submitTx(tx)
+                const id = await client.submitTx(tx)
+                console.log(`submitted ${id.toHex()}`)
             }catch(e) {
                 console.log(`failed to submit ${JSON.stringify(tx.dump())}`)
                 throw e
