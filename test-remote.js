@@ -177,7 +177,7 @@ describe("IrisClient", async () => {
         // | 50  | ok         | ok   |
         // | 100 | ok         | ok   |
         // | 500 | ok         | ok   |
-        const n = 5
+        const n = 10
         await it(`tx chain with ${n} txs`, async () => {
             
             const unchainedWallet = makeUnstakedSimpleWallet(key, client)
@@ -249,7 +249,7 @@ describe("IrisClient", async () => {
                 console.log("  and first UTXO fetched immediately after")
 
                 // wait some time between submission, in order to test the node memory
-                await new Promise((resolve) => setTimeout(resolve, 10000))
+                await new Promise((resolve) => setTimeout(resolve, 5000))
             }
         })
 
@@ -280,7 +280,13 @@ describe("IrisClient", async () => {
             console.log(`ref slot: ${params.refTipSlot}, ref time: ${params.refTipTime}`)
             console.log(`tx start slot: ${tx.body.firstValidSlot}, tx start time: ${t}`)
             tx.addSignatures(await wallet.signTx(tx))
-            await client.submitTx(tx)
+
+            try {
+                await client.submitTx(tx)
+            }catch(e) {
+                console.log(`failed to submit ${JSON.stringify(tx.dump())}`)
+                throw e
+            }
         })
         
     }
