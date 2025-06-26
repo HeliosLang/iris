@@ -261,6 +261,7 @@ func (c *CardanoCLI) DeriveParameters() (HeliosNetworkParams, error) {
 		TxFeeFixed:           params.TxFeeFixed,
 		TxFeePerByte:         params.TxFeePerByte,
 		UTXODepositPerByte:   params.UTXOCostPerByte,
+		CollateralUTXO:       "",
 	}
 
 	return heliosParams, nil

@@ -486,6 +486,7 @@ func (h *Handler) chainTip(w http.ResponseWriter, r *http.Request) {
 }
 
 type HeliosNetworkParams struct {
+	CollateralUTXO       string  `json:"collateralUTXO,omitempty"`
 	CollateralPercentage int     `json:"collateralPercentage"`
 	CostModelParamsV1    []int   `json:"costModelParamsV1"`
 	CostModelParamsV2    []int   `json:"costModelParamsV2"`
@@ -533,6 +534,20 @@ func (h *Handler) parameters(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		internalError(w, err)
 		return
+	}
+
+	if h.config.Collateral != "" && h.config.Wallet != nil && len(h.config.Collateral) > 64 {
+		txID := h.config.Collateral[:64]
+		outputIndexStr := h.config.Collateral[64:]
+		if idx, err := strconv.Atoi(outputIndexStr); err == nil {
+			utxo, err := h.db.UTXO(txID, idx, r.Context())
+			if err == nil && utxo.ConsumedBy == "" {
+				addr, err := firstEnterpriseAddress(h.config.Wallet, h.config.NetworkName)
+				if err == nil && utxo.Address == addr {
+					heliosParams.CollateralUTXO = h.config.Collateral
+				}
+			}
+		}
 	}
 
 	tip, err := h.cli.Tip()
