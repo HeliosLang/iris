@@ -25,7 +25,7 @@ import (
 )
 
 type Handler struct {
-	networkName string
+	config      *Config
 	cli         *CardanoCLI
 	db          *DB
 	store       *Store
@@ -53,22 +53,22 @@ type SelectRequest struct {
 	Algorithm   string `json:"algorithm"`
 }
 
-func NewHandler(networkName string) (*Handler, error) {
-	cli := NewCardanoCLI(networkName)
+func NewHandler(cfg *Config) (*Handler, error) {
+	cli := NewCardanoCLI(cfg.NetworkName)
 
-	db, err := NewDB(networkName)
+	db, err := NewDB(cfg.NetworkName)
 	if err != nil {
 		return nil, err
 	}
 
 	// this might take a while
-	store, err := LoadStore(filepath.Join("/var/cache/cardano-node", networkName))
+	store, err := LoadStore(filepath.Join("/var/cache/cardano-node", cfg.NetworkName))
 	if err != nil {
 		return nil, err
 	}
 
 	handler := &Handler{
-		networkName,
+		cfg,
 		cli,
 		db,
 		store,
@@ -148,7 +148,7 @@ func (h *Handler) api(w http.ResponseWriter, r *http.Request, url URLHelper) {
 }
 
 func (h *Handler) validAddress(addr string) bool {
-	if h.networkName == "mainnet" {
+	if h.config.NetworkName == "mainnet" {
 		if !strings.HasPrefix(addr, "addr1") {
 			return false
 		}
@@ -789,7 +789,7 @@ func (h *Handler) submitTxWithDeps(txPath string) (string, error) {
 
 		fmt.Printf("resubmitting %s", missingInput.TxID)
 
-		// anything in the mempool should also have its content written to its tmp path 
+		// anything in the mempool should also have its content written to its tmp path
 		_, err := h.submitTxWithDeps(p)
 		if err != nil {
 			fmt.Printf("failed to resubmit %s: %v", missingInput.TxID, err)
@@ -913,9 +913,9 @@ func (h *Handler) txOutput(w http.ResponseWriter, r *http.Request, url URLHelper
 		if cbor == nil {
 			http.Error(w, fmt.Sprintf("Tx output %s#%d not found", txID, outputIndex), http.StatusNotFound)
 			return
-		}	
+		}
 	}
-	
+
 	respondWithCBOR(w, r, cbor)
 }
 
@@ -960,9 +960,9 @@ func (h *Handler) utxoContent(w http.ResponseWriter, r *http.Request, txID strin
 	defer h.mu.RUnlock()
 
 	var (
-		utxo UTXO
+		utxo  UTXO
 		found bool
-		err error
+		err   error
 	)
 
 	utxo, found = h.mempool.GetUTXO(txID, outputIndex)

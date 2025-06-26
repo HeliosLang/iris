@@ -10,16 +10,11 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"os"
 	"regexp"
 	"strings"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/acme/autocert"
-)
-
-const (
-	NetworkFile = "/etc/cardano-iris/network"
 )
 
 var (
@@ -29,14 +24,14 @@ var (
 func main() {
 	cli := makeCLI()
 
-	cli.Execute()	
+	cli.Execute()
 }
 
 func makeCLI() *cobra.Command {
 	cli := &cobra.Command{
-		Use: "cardano-iris",
+		Use:   "cardano-iris",
 		Short: "Install and manage Cardano Node services",
-		RunE: serve,
+		RunE:  serve,
 	}
 
 	cli.Flags().BoolVar(&useHTTP, "http", false, "host using HTTP instead of HTTPS (more suitable for localhost)")
@@ -45,24 +40,24 @@ func makeCLI() *cobra.Command {
 }
 
 func serve(cmd *cobra.Command, args []string) error {
-	networkName := readNetworkName()
+	cfg := NewConfig()
 
-	if (useHTTP) {
-		return serveHTTP(cmd, args, networkName)
+	if useHTTP {
+		return serveHTTP(cmd, args, cfg)
 	} else {
-		return serveHTTPS(cmd, args, networkName)
+		return serveHTTPS(cmd, args, cfg)
 	}
 }
 
-func serveHTTP(cmd *cobra.Command, args []string, networkName string) error {
-	handler, err := NewHandler(networkName)
+func serveHTTP(cmd *cobra.Command, args []string, cfg *Config) error {
+	handler, err := NewHandler(cfg)
 	if err != nil {
 		return err
 	}
-	
+
 	// Start HTTP server
 	server := &http.Server{
-		Addr:      ":80",
+		Addr:    ":80",
 		Handler: handler,
 	}
 
@@ -75,8 +70,8 @@ func serveHTTP(cmd *cobra.Command, args []string, networkName string) error {
 	return nil
 }
 
-func serveHTTPS(cmd *cobra.Command, args []string, networkName string) error {
-	handler, err := NewHandler(networkName)
+func serveHTTPS(cmd *cobra.Command, args []string, cfg *Config) error {
+	handler, err := NewHandler(cfg)
 	if err != nil {
 		return err
 	}
@@ -93,7 +88,7 @@ func serveHTTPS(cmd *cobra.Command, args []string, networkName string) error {
 			}
 		},
 	}
-	
+
 	// Start HTTP server for Let's Encrypt challenge response
 	go func() {
 		httpServer := &http.Server{
@@ -117,32 +112,13 @@ func serveHTTPS(cmd *cobra.Command, args []string, networkName string) error {
 	// Start HTTPS server
 	httpsServer := &http.Server{
 		Addr:      ":443",
-		Handler: handler,
+		Handler:   handler,
 		TLSConfig: tlsConfig,
 	}
 
 	log.Println("HTTPS server listening on port 443")
 
 	return httpsServer.ListenAndServeTLS("", "") // certs provided dynamically
-}
-
-func readNetworkName() string {
-	data, err := os.ReadFile(NetworkFile)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "preprod"
-		}
-
-		log.Fatalf("Error reading file %s: %v\n", NetworkFile, err)
-	}
-
-	name := strings.TrimSpace(string(data))
-
-	if (name != "preprod" && name != "mainnet") {
-		log.Fatalf("Expected preprod or mainnet in %s, got %v\n", NetworkFile, name)
-	}
-
-	return name
 }
 
 // Only allow domain names (not IPs or localhost)
