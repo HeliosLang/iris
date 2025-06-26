@@ -115,8 +115,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch cmp {
 	case "api":
 		h.api(w, r, url)
-	case "config": // TODO: implement the config endpoints (these will be used by the page dashboard)
-		invalidEndpoint(w, r)
+	case "config":
+		h.configRoutes(w, r, url)
 	default:
 		h.page(w, r)
 	}
@@ -145,6 +145,45 @@ func (h *Handler) api(w http.ResponseWriter, r *http.Request, url URLHelper) {
 	default:
 		invalidEndpoint(w, r)
 	}
+}
+
+func (h *Handler) configRoutes(w http.ResponseWriter, r *http.Request, url URLHelper) {
+	cmp, _ := url.Pop()
+
+	if r.Method != http.MethodGet {
+		invalidMethod(w, r)
+		return
+	}
+
+	switch cmp {
+	case "wallet":
+		h.configWallet(w, r)
+	case "collateral":
+		h.configCollateral(w, r)
+	default:
+		invalidEndpoint(w, r)
+	}
+}
+
+func (h *Handler) configWallet(w http.ResponseWriter, r *http.Request) {
+	if h.config.Wallet == nil {
+		http.Error(w, "wallet not configured", http.StatusNotFound)
+		return
+	}
+	addr, err := firstEnterpriseAddress(h.config.Wallet, h.config.NetworkName)
+	if err != nil {
+		internalError(w, err)
+		return
+	}
+	respondWithJSON(w, map[string]string{"address": addr})
+}
+
+func (h *Handler) configCollateral(w http.ResponseWriter, r *http.Request) {
+	if h.config.Collateral == "" {
+		http.Error(w, "collateral not set", http.StatusNotFound)
+		return
+	}
+	respondWithJSON(w, map[string]string{"collateral": h.config.Collateral})
 }
 
 func (h *Handler) validAddress(addr string) bool {
