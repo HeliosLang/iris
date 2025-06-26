@@ -759,15 +759,15 @@ func (h *Handler) submitTxWithDeps(txPath string) (string, error) {
 
 	parsedErr := ParseTxSubmitError(err.Error())
 
-	if len(parsedErr.BadInputs) == 0 {
+	if len(parsedErr.MissingInputs) == 0 {
 		return "", err
 	}
 
 	done := make(map[string]struct{})
 
-	for _, badInput := range parsedErr.BadInputs {
+	for _, missingInput := range parsedErr.MissingInputs {
 		// get from disc instead of mempool, because disc maintains much more information
-		txID := badInput.TxID
+		txID := missingInput.TxID
 
 		if _, ok := done[txID]; ok {
 			continue
@@ -775,24 +775,24 @@ func (h *Handler) submitTxWithDeps(txPath string) (string, error) {
 
 		done[txID] = struct{}{}
 
-		badInputPath := getTmpPath(badInput.TxID)
+		p := getTmpPath(missingInput.TxID)
 
-		if _, err := os.Stat(badInputPath); err != nil {
+		if _, err := os.Stat(p); err != nil {
 			if errors.Is(err, os.ErrNotExist) {
-				fmt.Printf("tx %s not found, skipping", badInputPath)
+				fmt.Printf("tx %s not found, skipping", p)
 			} else {
-				fmt.Printf("problem reading tx %s, skipping (%v)", badInputPath, err)
+				fmt.Printf("problem reading tx %s, skipping (%v)", p, err)
 			}
 			continue
 			// path/to/whatever does not exist
 		}
 
-		fmt.Printf("resubmitting %s", badInput.TxID)
+		fmt.Printf("resubmitting %s", missingInput.TxID)
 
 		// anything in the mempool should also have its content written to its tmp path 
-		_, err := h.submitTxWithDeps(badInputPath)
+		_, err := h.submitTxWithDeps(p)
 		if err != nil {
-			fmt.Printf("failed to resubmit %s: %v", badInput.TxID, err)
+			fmt.Printf("failed to resubmit %s: %v", missingInput.TxID, err)
 		}
 	}
 
