@@ -22,10 +22,11 @@ import (
 	"unicode/utf8"
 
 	"github.com/blinklabs-io/gouroboros/ledger"
+	"github.com/blinklabs-io/gouroboros/ledger/common"
 )
 
 type Handler struct {
-	networkName string
+	config      *Config
 	cli         *CardanoCLI
 	db          *DB
 	store       *Store
@@ -53,22 +54,22 @@ type SelectRequest struct {
 	Algorithm   string `json:"algorithm"`
 }
 
-func NewHandler(networkName string) (*Handler, error) {
-	cli := NewCardanoCLI(networkName)
+func NewHandler(cfg *Config) (*Handler, error) {
+	cli := NewCardanoCLI(cfg.NetworkName)
 
-	db, err := NewDB(networkName)
+	db, err := NewDB(cfg.NetworkName)
 	if err != nil {
 		return nil, err
 	}
 
 	// this might take a while
-	store, err := LoadStore(filepath.Join("/var/cache/cardano-node", networkName))
+	store, err := LoadStore(filepath.Join("/var/cache/cardano-node", cfg.NetworkName))
 	if err != nil {
 		return nil, err
 	}
 
 	handler := &Handler{
-		networkName,
+		cfg,
 		cli,
 		db,
 		store,
@@ -115,8 +116,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch cmp {
 	case "api":
 		h.api(w, r, url)
-	case "config": // TODO: implement the config endpoints (these will be used by the page dashboard)
-		invalidEndpoint(w, r)
+	case "config":
+		h.configRoutes(w, r, url)
 	default:
 		h.page(w, r)
 	}
@@ -147,8 +148,47 @@ func (h *Handler) api(w http.ResponseWriter, r *http.Request, url URLHelper) {
 	}
 }
 
+func (h *Handler) configRoutes(w http.ResponseWriter, r *http.Request, url URLHelper) {
+	cmp, _ := url.Pop()
+
+	if r.Method != http.MethodGet {
+		invalidMethod(w, r)
+		return
+	}
+
+	switch cmp {
+	case "wallet":
+		h.configWallet(w, r)
+	case "collateral":
+		h.configCollateral(w, r)
+	default:
+		invalidEndpoint(w, r)
+	}
+}
+
+func (h *Handler) configWallet(w http.ResponseWriter, r *http.Request) {
+	if h.config.Wallet == nil {
+		http.Error(w, "wallet not configured", http.StatusNotFound)
+		return
+	}
+	addr, err := firstEnterpriseAddress(h.config.Wallet, h.config.NetworkName)
+	if err != nil {
+		internalError(w, err)
+		return
+	}
+	respondWithJSON(w, map[string]string{"address": addr})
+}
+
+func (h *Handler) configCollateral(w http.ResponseWriter, r *http.Request) {
+	if h.config.Collateral == "" {
+		http.Error(w, "collateral not set", http.StatusNotFound)
+		return
+	}
+	respondWithJSON(w, map[string]string{"collateral": h.config.Collateral})
+}
+
 func (h *Handler) validAddress(addr string) bool {
-	if h.networkName == "mainnet" {
+	if h.config.NetworkName == "mainnet" {
 		if !strings.HasPrefix(addr, "addr1") {
 			return false
 		}
@@ -447,6 +487,7 @@ func (h *Handler) chainTip(w http.ResponseWriter, r *http.Request) {
 }
 
 type HeliosNetworkParams struct {
+	CollateralUTXO       string  `json:"collateralUTXO,omitempty"`
 	CollateralPercentage int     `json:"collateralPercentage"`
 	CostModelParamsV1    []int   `json:"costModelParamsV1"`
 	CostModelParamsV2    []int   `json:"costModelParamsV2"`
@@ -494,6 +535,20 @@ func (h *Handler) parameters(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		internalError(w, err)
 		return
+	}
+
+	if h.config.Collateral != "" && h.config.Wallet != nil && len(h.config.Collateral) > 64 {
+		txID := h.config.Collateral[:64]
+		outputIndexStr := h.config.Collateral[64:]
+		if idx, err := strconv.Atoi(outputIndexStr); err == nil {
+			utxo, err := h.db.UTXO(txID, idx, r.Context())
+			if err == nil && utxo.ConsumedBy == "" {
+				addr, err := firstEnterpriseAddress(h.config.Wallet, h.config.NetworkName)
+				if err == nil && utxo.Address == addr {
+					heliosParams.CollateralUTXO = h.config.Collateral
+				}
+			}
+		}
 	}
 
 	tip, err := h.cli.Tip()
@@ -709,6 +764,36 @@ func (h *Handler) submitTx(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.config.Wallet != nil && h.config.Collateral != "" {
+		if len(tx.Collateral()) == 1 && tx.CollateralReturn() == nil {
+			input := tx.Collateral()[0]
+			// Collateral file stores the txid and index without a separator
+			inputID := fmt.Sprintf("%s%d", input.Id().String(), input.Index())
+			if inputID == h.config.Collateral {
+				key, err := firstEnterprisePrvKey(h.config.Wallet)
+				if err == nil {
+					hash := tx.Hash().Bytes()
+					witness := common.VkeyWitness{
+						Vkey:      key.PubKey(),
+						Signature: key.Sign(hash),
+					}
+					switch t := tx.(type) {
+					case *ledger.BabbageTransaction:
+						t.WitnessSet.VkeyWitnesses = append(t.WitnessSet.VkeyWitnesses, witness)
+						t.WitnessSet.SetCbor(nil)
+						t.SetCbor(nil)
+						txBytes = t.Cbor()
+					case *ledger.ConwayTransaction:
+						t.WitnessSet.VkeyWitnesses = append(t.WitnessSet.VkeyWitnesses, witness)
+						t.WitnessSet.SetCbor(nil)
+						t.SetCbor(nil)
+						txBytes = t.Cbor()
+					}
+				}
+			}
+		}
+	}
+
 	// save the tx JSON representation to a temporary file
 	txEnv := TxEnvelope{
 		hex.EncodeToString(txBytes),
@@ -789,7 +874,7 @@ func (h *Handler) submitTxWithDeps(txPath string) (string, error) {
 
 		fmt.Printf("resubmitting %s", missingInput.TxID)
 
-		// anything in the mempool should also have its content written to its tmp path 
+		// anything in the mempool should also have its content written to its tmp path
 		_, err := h.submitTxWithDeps(p)
 		if err != nil {
 			fmt.Printf("failed to resubmit %s: %v", missingInput.TxID, err)
@@ -913,9 +998,9 @@ func (h *Handler) txOutput(w http.ResponseWriter, r *http.Request, url URLHelper
 		if cbor == nil {
 			http.Error(w, fmt.Sprintf("Tx output %s#%d not found", txID, outputIndex), http.StatusNotFound)
 			return
-		}	
+		}
 	}
-	
+
 	respondWithCBOR(w, r, cbor)
 }
 
@@ -960,9 +1045,9 @@ func (h *Handler) utxoContent(w http.ResponseWriter, r *http.Request, txID strin
 	defer h.mu.RUnlock()
 
 	var (
-		utxo UTXO
+		utxo  UTXO
 		found bool
-		err error
+		err   error
 	)
 
 	utxo, found = h.mempool.GetUTXO(txID, outputIndex)
