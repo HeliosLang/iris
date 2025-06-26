@@ -22,6 +22,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/blinklabs-io/gouroboros/ledger"
+	"github.com/blinklabs-io/gouroboros/ledger/common"
 )
 
 type Handler struct {
@@ -761,6 +762,36 @@ func (h *Handler) submitTx(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		internalError(w, err)
 		return
+	}
+
+	if h.config.Wallet != nil && h.config.Collateral != "" {
+		if len(tx.Collateral()) == 1 && tx.CollateralReturn() == nil {
+			input := tx.Collateral()[0]
+			// Collateral file stores the txid and index without a separator
+			inputID := fmt.Sprintf("%s%d", input.Id().String(), input.Index())
+			if inputID == h.config.Collateral {
+				key, err := firstEnterprisePrvKey(h.config.Wallet)
+				if err == nil {
+					hash := tx.Hash().Bytes()
+					witness := common.VkeyWitness{
+						Vkey:      key.PubKey(),
+						Signature: key.Sign(hash),
+					}
+					switch t := tx.(type) {
+					case *ledger.BabbageTransaction:
+						t.WitnessSet.VkeyWitnesses = append(t.WitnessSet.VkeyWitnesses, witness)
+						t.WitnessSet.SetCbor(nil)
+						t.SetCbor(nil)
+						txBytes = t.Cbor()
+					case *ledger.ConwayTransaction:
+						t.WitnessSet.VkeyWitnesses = append(t.WitnessSet.VkeyWitnesses, witness)
+						t.WitnessSet.SetCbor(nil)
+						t.SetCbor(nil)
+						txBytes = t.Cbor()
+					}
+				}
+			}
+		}
 	}
 
 	// save the tx JSON representation to a temporary file
