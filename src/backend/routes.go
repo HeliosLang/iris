@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -762,18 +763,36 @@ func (h *Handler) submitTxWithDeps(txPath string) (string, error) {
 		return "", err
 	}
 
+	done := make(map[string]struct{})
+
 	for _, badInput := range parsedErr.BadInputs {
-		mempoolTx := h.mempool.GetTx(badInput.TxID)
-		if mempoolTx == nil {
-			return "", fmt.Errorf("bad input %s not in mempool (%v)", badInput.TxID, err)
+		// get from disc instead of mempool, because disc maintains much more information
+		txID := badInput.TxID
+
+		if _, ok := done[txID]; ok {
+			continue
 		}
 
-		fmt.Printf("found %s in mempool, resubmitting", badInput.TxID)
+		done[txID] = struct{}{}
+
+		badInputPath := getTmpPath(badInput.TxID)
+
+		if _, err := os.Stat(badInputPath); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				fmt.Printf("tx %s not found, skipping", badInputPath)
+			} else {
+				fmt.Printf("problem reading tx %s, skipping (%v)", badInputPath, err)
+			}
+			continue
+			// path/to/whatever does not exist
+		}
+
+		fmt.Printf("resubmitting %s", badInput.TxID)
 
 		// anything in the mempool should also have its content written to its tmp path 
-		_, err := h.submitTxWithDeps(getTxTmpPath(mempoolTx))
+		_, err := h.submitTxWithDeps(badInputPath)
 		if err != nil {
-			return "", err
+			fmt.Printf("failed to resubmit %s: %v", badInput.TxID, err)
 		}
 	}
 
@@ -781,8 +800,12 @@ func (h *Handler) submitTxWithDeps(txPath string) (string, error) {
 	return h.cli.SubmitTx(txPath)
 }
 
+func getTmpPath(txID string) string {
+	return "/tmp/" + txID
+}
+
 func getTxTmpPath(tx ledger.Transaction) string {
-	return "/tmp/" + tx.Hash().String()
+	return getTmpPath(tx.Hash().String())
 }
 
 func decodeTx(txBytes []byte) (ledger.Transaction, error) {

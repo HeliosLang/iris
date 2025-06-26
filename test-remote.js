@@ -247,6 +247,9 @@ describe("IrisClient", async () => {
                 await client.getUtxo(makeTxOutputId(id, 0))
 
                 console.log("  and first UTXO fetched immediately after")
+
+                // wait some time between submission, in order to test the node memory
+                await new Promise((resolve) => setTimeout(resolve, 10000))
             }
         })
 
