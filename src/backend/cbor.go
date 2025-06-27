@@ -510,7 +510,7 @@ func negMinusOne(x *big.Int) *big.Int {
 	(&a).Neg(x)
 
 	var b big.Int
-	(&b).Sub(&a, big.NewInt(-1))
+	(&b).Sub(&a, big.NewInt(1))
 
 	return &b
 }
