@@ -765,6 +765,12 @@ func (h *Handler) submitTx(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	tx, err = h.signCollateral(tx)
+	if err != nil {
+		internalError(w, err)
+		return
+	}
+
 	// save the tx JSON representation to a temporary file
 	txEnv := TxEnvelope{
 		hex.EncodeToString(tx.Cbor()),
