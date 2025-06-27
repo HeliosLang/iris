@@ -504,6 +504,17 @@ func encodeIndefMapStart() []byte {
 	return encodeIndefHead(5)
 }
 
+// calculate -x -1
+func negMinusOne(x *big.Int) *big.Int {
+	var a big.Int
+	(&a).Neg(x)
+
+	var b big.Int
+	(&b).Sub(&a, big.NewInt(-1))
+
+	return &b
+}
+
 func encodeInt(x *big.Int) []byte {
 	var lim big.Int
 	var negLim big.Int
@@ -518,27 +529,11 @@ func encodeInt(x *big.Int) []byte {
 
 		return append(bs, EncodeBytes(encodeIntBigEndian(x))...)
 	} else if (x.Cmp(big.NewInt(-1)) <= 0 && x.Cmp(&negLim) >= 0) {
-		var z big.Int
-		(&z).Neg(x)
-
-		var z_ big.Int
-
-		(&z_).Sub(&z, big.NewInt(-1))
-
-        return encodeDefHead(1, &z_)
+        return encodeDefHead(1, negMinusOne(x))
     } else {
 		bs := encodeDefHead(6, big.NewInt(3))
 
-		var z big.Int
-		(&z).Neg(x)
-
-		var z_ big.Int
-
-		(&z_).Sub(&z, big.NewInt(-1))
-
-        return encodeDefHead(1, &z_)
-
-		return append(bs, EncodeBytes(encodeIntBigEndian(&z_))...)
+		return append(bs, EncodeBytes(encodeIntBigEndian(negMinusOne(x)))...)
     }
 }
 
@@ -894,13 +889,7 @@ func decodeInt(s *Stream) (*DecodedInt, error) {
 	if m == 0 {
 		return &DecodedInt{n}, nil
 	} else if m == 1 {
-		var nNeg big.Int
-		(&nNeg).Neg(n)
-
-		var nNegMinus1 big.Int
-		(&nNegMinus1).Sub(&nNeg, big.NewInt(1))
-
-		return &DecodedInt{&nNegMinus1}, nil
+		return &DecodedInt{negMinusOne(n)}, nil
 	} else if m == 6 {
 		if n.Uint64() == 2 {
 			bs, err := decodeBytes(s)
@@ -925,13 +914,7 @@ func decodeInt(s *Stream) (*DecodedInt, error) {
 				return nil, err
 			}
 
-			var nNeg big.Int
-			(&nNeg).Neg(nn)
-
-			var nNegMinus1 big.Int
-			(&nNegMinus1).Sub(&nNeg, big.NewInt(1))
-
-			return &DecodedInt{&nNegMinus1}, nil
+			return &DecodedInt{negMinusOne(nn)}, nil
 		} else {
 			return nil, errors.New("unexpected tag n")
 		}
