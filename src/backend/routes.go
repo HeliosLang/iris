@@ -21,6 +21,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/blinklabs-io/gouroboros/cbor"
 	"github.com/blinklabs-io/gouroboros/ledger"
 	"github.com/blinklabs-io/gouroboros/ledger/common"
 )
@@ -764,42 +765,12 @@ func (h *Handler) submitTx(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.config.Wallet != nil && h.config.Collateral != "" {
-		if len(tx.Collateral()) == 1 && tx.CollateralReturn() == nil {
-			input := tx.Collateral()[0]
-			// Collateral file stores the txid and index without a separator
-			inputID := fmt.Sprintf("%s%d", input.Id().String(), input.Index())
-			if inputID == h.config.Collateral {
-				key, err := firstEnterprisePrvKey(h.config.Wallet)
-				if err == nil {
-					hash := tx.Hash().Bytes()
-					witness := common.VkeyWitness{
-						Vkey:      key.PubKey(),
-						Signature: key.Sign(hash),
-					}
-					switch t := tx.(type) {
-					case *ledger.BabbageTransaction:
-						t.WitnessSet.VkeyWitnesses = append(t.WitnessSet.VkeyWitnesses, witness)
-						t.WitnessSet.SetCbor(nil)
-						t.SetCbor(nil)
-						txBytes = t.Cbor()
-					case *ledger.ConwayTransaction:
-						t.WitnessSet.VkeyWitnesses = append(t.WitnessSet.VkeyWitnesses, witness)
-						t.WitnessSet.SetCbor(nil)
-						t.SetCbor(nil)
-						txBytes = t.Cbor()
-					}
-				}
-			}
-		}
-	}
-
 	// save the tx JSON representation to a temporary file
-       txEnv := TxEnvelope{
-               hex.EncodeToString(txBytes),
-               "Tx ConwayEra", // TODO: automatic updating during hardforks
-               "Submitted through the Helios gateway",
-       }
+	txEnv := TxEnvelope{
+		hex.EncodeToString(tx.Cbor()),
+		"Tx ConwayEra", // TODO: automatic updating during hardforks
+		"Submitted through the Helios gateway",
+	}
 
 	content, err := json.Marshal(txEnv)
 	if err != nil {
@@ -833,6 +804,125 @@ func (h *Handler) submitTx(w http.ResponseWriter, r *http.Request) {
 	if _, err := w.Write([]byte(result)); err != nil {
 		internalError(w, err)
 		return
+	}
+}
+
+
+func (h *Handler) signCollateral(tx ledger.Transaction) (ledger.Transaction, error) {
+	if h.config.Wallet == nil {
+		return tx, nil
+	}
+
+	if h.config.Collateral == "" {
+		return tx, nil
+	}
+
+	if !isBabbageOrConwayTx(tx) {
+		return tx, nil
+	}
+
+	if len(tx.Collateral()) != 1 {
+		return tx, nil
+	} 
+	
+	if tx.CollateralReturn() != nil {
+		return tx, nil
+	}
+
+	input := tx.Collateral()[0]
+	inputID := fmt.Sprintf("%s%d", input.Id().String(), input.Index())
+
+	if inputID != h.config.Collateral {
+		return tx, nil
+	}
+
+	key, err := firstEnterprisePrvKey(h.config.Wallet)
+	if err != nil {
+		fmt.Printf("unable to generate collateral wallet key (%v)", err)
+		return tx, nil
+	}
+
+
+	hash := tx.Hash().Bytes()
+	witness := common.VkeyWitness{
+		Vkey:      key.PubKey(),
+		Signature: key.Sign(hash),
+	}
+	witnessBytes, err := cbor.Encode(witness)
+	if err != nil {
+		return nil, err
+	}
+
+	witness_, err := Decode(witnessBytes)
+	if err != nil {
+		return nil, err
+	}
+
+	d, err := Decode(tx.Cbor())
+	if err != nil {
+		return nil, err
+	}
+
+	txList, ok := d.(*DecodedList)
+	if !ok || len(txList.Items) != 4 {
+		fmt.Println("decoded tx isn't a tuple with 4 entries")
+		return tx, nil
+	}
+
+	txWitnessesMap, ok := (txList.Items[1]).(*DecodedMap)
+	if !ok || len(txWitnessesMap.Pairs) < 1 {
+		fmt.Println("decoded tx witnesses isn't a map with at least one entry")
+		return tx, nil
+	}
+
+	signaturesI := -1
+	for i, pair := range txWitnessesMap.Pairs {
+		key, ok := pair.Key.(*DecodedInt)
+		if ok && key.Value.Uint64() == 0 {
+			signaturesI = i
+			break
+		}
+	}
+
+	if signaturesI == -1 {
+		// TODO: what to do if no signatures are needed because all inputs are from public smart contract?
+		// -> add to end
+		fmt.Println("signatures entry not found in map")
+		txWitnessesMap.Pairs = append(txWitnessesMap.Pairs, DecodedPair{
+			Key: &DecodedInt{big.NewInt(0)},
+			Value: &DecodedList{
+				Type: "set", // TODO: we might need to detect this from other entries
+				Items: []Decoded{witness_},
+			},
+		})
+	} else {
+		pair := txWitnessesMap.Pairs[signaturesI]
+		signatures, ok := (pair.Value).(*DecodedList)
+		if !ok {
+			fmt.Println("signatures entry isn't a list")
+			return tx, nil
+		}
+	
+		signatures.Items = append(signatures.Items, witness_)
+	}
+
+	updatedTxBytes := d.Cbor()
+	tx, err = decodeTx(updatedTxBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update tx bytes with signature for collateral (%v)", err)
+	}
+
+	return tx, nil
+}
+
+func isBabbageOrConwayTx(tx ledger.Transaction) bool {
+	switch tx.(type) {
+	case *ledger.BabbageTransaction:
+		return true
+	case *ledger.ConwayTransaction:
+		return true
+	default:
+		return false
 	}
 }
 
