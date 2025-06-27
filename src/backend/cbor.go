@@ -10,6 +10,10 @@ import (
 	"github.com/blinklabs-io/gouroboros/ledger"
 )
 
+// This is quick-n-dirty CBOR encoding/decoding functionality.
+// I implemented this because gouroboros doesn't seem to do some things correctly.
+// Implementing this took about 12 hours, and we needed it quickly and couldn't wait for resolution of bugs in gouroboros repo
+
 type Decoded interface {
 	Cbor() []byte
 }
@@ -890,13 +894,13 @@ func decodeInt(s *Stream) (*DecodedInt, error) {
 	if m == 0 {
 		return &DecodedInt{n}, nil
 	} else if m == 1 {
-		var nNeg *big.Int
-		nNeg.Neg(n)
+		var nNeg big.Int
+		(&nNeg).Neg(n)
 
-		var nNegMinus1 *big.Int
-		nNegMinus1.Sub(nNeg, big.NewInt(1))
+		var nNegMinus1 big.Int
+		(&nNegMinus1).Sub(&nNeg, big.NewInt(1))
 
-		return &DecodedInt{nNegMinus1}, nil
+		return &DecodedInt{&nNegMinus1}, nil
 	} else if m == 6 {
 		if n.Uint64() == 2 {
 			bs, err := decodeBytes(s)
@@ -921,13 +925,13 @@ func decodeInt(s *Stream) (*DecodedInt, error) {
 				return nil, err
 			}
 
-			var nNeg *big.Int
-			nNeg.Neg(nn)
+			var nNeg big.Int
+			(&nNeg).Neg(nn)
 
-			var nNegMinus1 *big.Int
-			nNegMinus1.Sub(nNeg, big.NewInt(1))
+			var nNegMinus1 big.Int
+			(&nNegMinus1).Sub(&nNeg, big.NewInt(1))
 
-			return &DecodedInt{nNegMinus1}, nil
+			return &DecodedInt{&nNegMinus1}, nil
 		} else {
 			return nil, errors.New("unexpected tag n")
 		}
