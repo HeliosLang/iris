@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/blinklabs-io/gouroboros/cbor"
@@ -19,7 +20,7 @@ import (
 
 type Store struct {
 	immutable *ImmStore
-	volatile *VolStore
+	volatile  *VolStore
 
 	// the store is frequently notified of tip changes
 	//  if the tip is different, the immutable and volatile stores must be updated
@@ -30,12 +31,14 @@ type Store struct {
 
 // keeps all secondary indices in memory, ignoring the primary indices for now
 // this uses a huge amount of memory (~1GB), but still fits nicely in memory of modern computers
-//  for comparisson: the default postgresql database created by cardano-db-sync is much larger (~500GB)
+//
+//	for comparisson: the default postgresql database created by cardano-db-sync is much larger (~500GB)
 type ImmStore struct {
 	dir    string
 	chunks []*ImmChunk
 
 	blockPtrs map[string]BlockPtr // TODO: are there more efficient keys than using some string encoding of the block hash?
+	mu        sync.RWMutex
 }
 
 // volatile store
@@ -46,18 +49,19 @@ type VolStore struct {
 	chunks map[uint32]*VolChunk
 
 	latestChunk uint32
-	blockPtrs map[string]BlockPtr
+	blockPtrs   map[string]BlockPtr
+	mu          sync.RWMutex
 }
 
 type ImmChunk struct {
-	modTime time.Time
+	modTime          time.Time
 	secondaryIndices []SecondaryIndexEntry
 }
 
 // store completely in memory
 type VolChunk struct {
 	modTime time.Time
-	blocks []ledger.Block
+	blocks  []ledger.Block
 }
 
 // pointer into the immutable db
@@ -71,12 +75,12 @@ type BlockPtr struct {
 
 // See section 8.2.2 of https://ouroboros-consensus.cardano.intersectmbo.org/pdfs/report.pdf
 type SecondaryIndexEntry struct {
-	BlockOffset uint64
-	HeaderOffset uint16
-	HeaderSize uint16
-	Checksum uint32
-	BlockID [32]byte // aka. header hash
-	SlotOrEpochNo uint64 
+	BlockOffset   uint64
+	HeaderOffset  uint16
+	HeaderSize    uint16
+	Checksum      uint32
+	BlockID       [32]byte // aka. header hash
+	SlotOrEpochNo uint64
 }
 
 func LoadStore(dir string) (*Store, error) {
@@ -92,7 +96,7 @@ func LoadStore(dir string) (*Store, error) {
 
 	loadedTip := vol.Tip()
 
-	if (loadedTip == "") {
+	if loadedTip == "" {
 		loadedTip = imm.Tip()
 	}
 
@@ -131,12 +135,12 @@ func LoadImmStore(dir string) (*ImmStore, error) {
 				return nil
 			}
 
-			for len(chunks) < int(id + 1) {
+			for len(chunks) < int(id+1) {
 				chunks = append(chunks, nil)
 			}
-	
+
 			chunks[id] = chunk
-		
+
 			// TODO: read primary index files
 		}
 
@@ -153,6 +157,7 @@ func LoadImmStore(dir string) (*ImmStore, error) {
 		dir,
 		chunks,
 		nil, // filled on-demand
+		sync.RWMutex{},
 	}, nil
 }
 
@@ -188,7 +193,7 @@ func LoadVolStore(dir string) (*VolStore, error) {
 
 			chunks[id] = chunk
 
-			if (id > latestChunk) {
+			if id > latestChunk {
 				latestChunk = id
 			}
 		}
@@ -207,23 +212,28 @@ func LoadVolStore(dir string) (*VolStore, error) {
 		chunks,
 		latestChunk,
 		nil, // filled on-demand
+		sync.RWMutex{},
 	}, nil
 }
 
 func (s *ImmStore) Tip() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
 	n := len(s.chunks)
 
-	if (n == 0) {
+	if n == 0 {
 		return ""
-	} else {
-		c := s.chunks[n-1]
-
-		return c.Tip()
 	}
+
+	c := s.chunks[n-1]
+	return c.Tip()
 }
 
 func (s *VolStore) Tip() string {
+	s.mu.RLock()
 	chunk, ok := s.chunks[s.latestChunk]
+	s.mu.RUnlock()
 	if !ok {
 		return ""
 	}
@@ -253,7 +263,14 @@ func (s *ImmStore) chunkFilePath(id int) string {
 }
 
 func (s *ImmStore) latestChunkID() int {
-	return len(s.chunks)-1
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.latestChunkIDLocked()
+}
+
+// caller must hold at least a read lock on s.mu
+func (s *ImmStore) latestChunkIDLocked() int {
+	return len(s.chunks) - 1
 }
 
 func (s *ImmStore) sync() {
@@ -263,7 +280,8 @@ func (s *ImmStore) sync() {
 }
 
 func (s *ImmStore) syncLoadedBlocks() {
-	chunkID := s.latestChunkID()
+	s.mu.Lock()
+	chunkID := s.latestChunkIDLocked()
 	chunk := s.chunks[chunkID]
 	path := s.chunkFilePath(chunkID)
 
@@ -286,16 +304,17 @@ func (s *ImmStore) syncLoadedBlocks() {
 					if s.blockPtrs != nil {
 						reloadedChunk.indexBlocks(s.blockPtrs, chunkID)
 					}
-
 					s.chunks[chunkID] = reloadedChunk
 				}
 			}
 		}
 	}
+	s.mu.Unlock()
 }
 
 func (s *ImmStore) syncNewBlocks() {
-	for nextID := s.latestChunkID() + 1; true; nextID++ {
+	s.mu.Lock()
+	for nextID := s.latestChunkIDLocked() + 1; true; nextID++ {
 		nextPath := s.chunkFilePath(nextID)
 		nextFile, err := os.Open(nextPath)
 		if err != nil {
@@ -305,7 +324,7 @@ func (s *ImmStore) syncNewBlocks() {
 
 			break
 		}
-		
+
 		defer nextFile.Close()
 
 		nextChunk, err := readImmChunk(nextFile)
@@ -320,6 +339,7 @@ func (s *ImmStore) syncNewBlocks() {
 
 		s.chunks = append(s.chunks, nextChunk)
 	}
+	s.mu.Unlock()
 }
 
 func (s *VolStore) chunkFilePath(id int) string {
@@ -327,9 +347,16 @@ func (s *VolStore) chunkFilePath(id int) string {
 }
 
 func (s *VolStore) latestChunkID() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.latestChunkIDLocked()
+}
+
+// caller must hold at least a read lock on s.mu
+func (s *VolStore) latestChunkIDLocked() int {
 	latestChunkID := -1
 
-	for id, _ := range s.chunks {
+	for id := range s.chunks {
 		if int(id) > latestChunkID {
 			latestChunkID = int(id)
 		}
@@ -338,7 +365,7 @@ func (s *VolStore) latestChunkID() int {
 	return latestChunkID
 }
 
-// first sync the existing files 
+// first sync the existing files
 func (s *VolStore) sync() {
 	s.syncLoadedBlocks()
 
@@ -348,6 +375,8 @@ func (s *VolStore) sync() {
 }
 
 func (s *VolStore) syncLoadedBlocks() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	for chunkID, chunk := range s.chunks {
 		path := s.chunkFilePath(int(chunkID))
 
@@ -386,7 +415,9 @@ func (s *VolStore) syncLoadedBlocks() {
 }
 
 func (s *VolStore) syncNewBlocks() {
-	for nextID := s.latestChunkID() + 1; true; nextID += 1 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for nextID := s.latestChunkIDLocked() + 1; true; nextID += 1 {
 		nextPath := s.chunkFilePath(nextID)
 		nextFile, err := os.Open(nextPath)
 		if err != nil {
@@ -396,7 +427,7 @@ func (s *VolStore) syncNewBlocks() {
 
 			break
 		}
-		
+
 		defer nextFile.Close()
 
 		nextChunk, err := readVolChunk(nextFile)
@@ -414,6 +445,9 @@ func (s *VolStore) syncNewBlocks() {
 }
 
 func (s *VolStore) pruneOrphanedBlockPtrs() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if s.blockPtrs == nil {
 		return
 	}
@@ -443,14 +477,16 @@ func (s *Store) Block(blockID string) (ledger.Block, error) {
 	return b, nil
 }
 
-
 func (s *ImmStore) has(blockID string) bool {
-	if (s.blockPtrs == nil) {
+	s.mu.RLock()
+	if s.blockPtrs == nil {
+		s.mu.RUnlock()
 		s.indexBlocks()
+		s.mu.RLock()
 	}
+	defer s.mu.RUnlock()
 
 	_, ok := s.blockPtrs[blockID]
-
 	return ok
 }
 
@@ -458,9 +494,13 @@ func (s *ImmStore) has(blockID string) bool {
 // returns the hex encoded bytes
 // returns nil if not found
 func (s *ImmStore) block(blockID string) (ledger.Block, error) {
-	if (s.blockPtrs == nil) {
+	s.mu.RLock()
+	if s.blockPtrs == nil {
+		s.mu.RUnlock()
 		s.indexBlocks()
+		s.mu.RLock()
 	}
+	defer s.mu.RUnlock()
 
 	ptr, ok := s.blockPtrs[blockID]
 	if !ok {
@@ -481,10 +521,10 @@ func (s *ImmStore) block(blockID string) (ledger.Block, error) {
 		return nil, err
 	}
 
-	isLast := int(ptr.J) == len(chunk.secondaryIndices) - 1
+	isLast := int(ptr.J) == len(chunk.secondaryIndices)-1
 	blockSize := 0
 
-	if (!isLast) {
+	if !isLast {
 		blockSize = int(chunk.secondaryIndices[ptr.J+1].BlockOffset - secondaryIndex.BlockOffset)
 	} else {
 		stat, err := file.Stat()
@@ -520,20 +560,27 @@ func (s *ImmStore) block(blockID string) (ledger.Block, error) {
 }
 
 func (s *VolStore) has(blockID string) bool {
+	s.mu.RLock()
 	if s.blockPtrs == nil {
+		s.mu.RUnlock()
 		s.indexBlocks()
+		s.mu.RLock()
 	}
+	defer s.mu.RUnlock()
 
 	_, ok := s.blockPtrs[blockID]
-
 	return ok
 }
 
 // returns nil if not found
 func (s *VolStore) block(blockID string) ledger.Block {
+	s.mu.RLock()
 	if s.blockPtrs == nil {
+		s.mu.RUnlock()
 		s.indexBlocks()
+		s.mu.RLock()
 	}
+	defer s.mu.RUnlock()
 
 	ptr, ok := s.blockPtrs[blockID]
 	if !ok {
@@ -545,14 +592,17 @@ func (s *VolStore) block(blockID string) ledger.Block {
 		return nil
 	}
 
+	var b ledger.Block
 	if int(ptr.J) < len(chunk.blocks) {
-		return chunk.blocks[ptr.J]
-	} else {
-		return nil
+		b = chunk.blocks[ptr.J]
 	}
+	return b
 }
 
 func (s *ImmStore) indexBlocks() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	s.blockPtrs = make(map[string]BlockPtr)
 
 	for chunkID, chunk := range s.chunks {
@@ -569,6 +619,9 @@ func (c *ImmChunk) indexBlocks(ptrs map[string]BlockPtr, chunkID int) {
 }
 
 func (s *VolStore) indexBlocks() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	s.blockPtrs = map[string]BlockPtr{}
 
 	for chunkID, chunk := range s.chunks {
@@ -610,10 +663,12 @@ func (s *Store) BlockTx(blockID string, txIndex int) (ledger.Transaction, error)
 }
 
 func (s *ImmStore) Status() (string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	n := len(s.chunks)
 	lastChunk := s.chunks[n-1]
 	nEntries := len(lastChunk.secondaryIndices)
-	lastEntry := lastChunk.secondaryIndices[nEntries - 1]
+	lastEntry := lastChunk.secondaryIndices[nEntries-1]
 
 	return fmt.Sprintf("{\"slot\": %d, \"chunk\": %d}", lastEntry.SlotOrEpochNo, n), nil
 }
@@ -621,7 +676,7 @@ func (s *ImmStore) Status() (string, error) {
 func (c *ImmChunk) Tip() string {
 	m := len(c.secondaryIndices)
 
-	if (m == 0) {
+	if m == 0 {
 		return ""
 	} else {
 		return hex.EncodeToString(c.secondaryIndices[m-1].BlockID[:])
@@ -631,7 +686,7 @@ func (c *ImmChunk) Tip() string {
 func (c *VolChunk) Tip() string {
 	m := len(c.blocks)
 
-	if (m == 0) {
+	if m == 0 {
 		return ""
 	} else {
 		hash := c.blocks[m-1].Header().Hash()
@@ -654,7 +709,7 @@ func readImmChunk(file *os.File) (*ImmChunk, error) {
 	stat, err := file.Stat()
 	if err != nil {
 		return nil, err
-	}	
+	}
 
 	indices := make([]SecondaryIndexEntry, 0)
 
@@ -705,7 +760,7 @@ func readVolChunk(file *os.File) (*VolChunk, error) {
 	for len(bs) > 0 {
 		block, n, err := decodeWrappedBlock(bs)
 		if err != nil {
-			log.Printf("failed to read block %d from %s: %v", len(blocks) + 1, stat.Name(), err)
+			log.Printf("failed to read block %d from %s: %v", len(blocks)+1, stat.Name(), err)
 			break
 		}
 
@@ -744,7 +799,7 @@ func extractChunkID(path string) (uint32, error) {
 	if err != nil {
 		return 0, fmt.Errorf("failed to parse chunk id from %s", idStr)
 	}
-	
+
 	return uint32(id), nil
 }
 
@@ -764,44 +819,44 @@ func decodeWrappedBlock(bs []byte) (ledger.Block, int, error) {
 
 func decodeBlock(blockType int, bs []byte) (ledger.Block, int, error) {
 	switch blockType {
-		case ledger.BlockTypeByronEbb:
-			var b ledger.ByronEpochBoundaryBlock
-			return decodeEraBlock[*ledger.ByronEpochBoundaryBlock](bs, &b)
-		case ledger.BlockTypeByronMain:
-			var b ledger.ByronMainBlock
-			return decodeEraBlock[*ledger.ByronMainBlock](bs, &b)
-		case ledger.BlockTypeShelley:
-			var b ledger.ShelleyBlock
-			return decodeEraBlock[*ledger.ShelleyBlock](bs, &b)
-		case ledger.BlockTypeAllegra:
-			var b ledger.AllegraBlock
-			return decodeEraBlock[*ledger.AllegraBlock](bs, &b)
-		case ledger.BlockTypeMary:
-			var b ledger.MaryBlock
-			return decodeEraBlock[*ledger.MaryBlock](bs, &b)
-		case ledger.BlockTypeAlonzo:
-			var b ledger.AlonzoBlock
-			return decodeEraBlock[*ledger.AlonzoBlock](bs, &b)
-		case ledger.BlockTypeBabbage:
-			var b ledger.BabbageBlock
-			return decodeEraBlock[*ledger.BabbageBlock](bs, &b)
-		case ledger.BlockTypeConway:
-			var b ledger.ConwayBlock
-			return decodeEraBlock[*ledger.ConwayBlock](bs, &b)
-		default:
-			return nil, 0, fmt.Errorf("unhandled block type %d", blockType)
+	case ledger.BlockTypeByronEbb:
+		var b ledger.ByronEpochBoundaryBlock
+		return decodeEraBlock[*ledger.ByronEpochBoundaryBlock](bs, &b)
+	case ledger.BlockTypeByronMain:
+		var b ledger.ByronMainBlock
+		return decodeEraBlock[*ledger.ByronMainBlock](bs, &b)
+	case ledger.BlockTypeShelley:
+		var b ledger.ShelleyBlock
+		return decodeEraBlock[*ledger.ShelleyBlock](bs, &b)
+	case ledger.BlockTypeAllegra:
+		var b ledger.AllegraBlock
+		return decodeEraBlock[*ledger.AllegraBlock](bs, &b)
+	case ledger.BlockTypeMary:
+		var b ledger.MaryBlock
+		return decodeEraBlock[*ledger.MaryBlock](bs, &b)
+	case ledger.BlockTypeAlonzo:
+		var b ledger.AlonzoBlock
+		return decodeEraBlock[*ledger.AlonzoBlock](bs, &b)
+	case ledger.BlockTypeBabbage:
+		var b ledger.BabbageBlock
+		return decodeEraBlock[*ledger.BabbageBlock](bs, &b)
+	case ledger.BlockTypeConway:
+		var b ledger.ConwayBlock
+		return decodeEraBlock[*ledger.ConwayBlock](bs, &b)
+	default:
+		return nil, 0, fmt.Errorf("unhandled block type %d", blockType)
 	}
 }
 
 type SettableCbor interface {
-	SetCbor(bs []byte)	
+	SetCbor(bs []byte)
 }
 
 func decodeEraBlock[T SettableCbor](bs []byte, b T) (T, int, error) {
-    n, err := cbor.Decode(bs, b)
+	n, err := cbor.Decode(bs, b)
 	if err != nil {
-        return b, 0, err 
-    }
+		return b, 0, err
+	}
 
 	return b, n, nil
 }
