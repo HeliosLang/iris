@@ -167,7 +167,7 @@ func (h *Handler) configRoutes(w http.ResponseWriter, r *http.Request, url URLHe
 	}
 }
 
-func (h *Handler) configWallet(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) configWallet(w http.ResponseWriter, _ *http.Request) {
 	if h.config.Wallet == nil {
 		http.Error(w, "wallet not configured", http.StatusNotFound)
 		return
@@ -180,7 +180,7 @@ func (h *Handler) configWallet(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, map[string]string{"address": addr})
 }
 
-func (h *Handler) configCollateral(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) configCollateral(w http.ResponseWriter, _ *http.Request) {
 	if h.config.Collateral == "" {
 		http.Error(w, "collateral not set", http.StatusNotFound)
 		return
@@ -220,9 +220,9 @@ func (h *Handler) address(w http.ResponseWriter, r *http.Request, url URLHelper)
 	case "utxos":
 		switch r.Method {
 		case http.MethodGet:
-			h.addressUTXOs(w, r, addr)
+			h.addressUTXOs(w, r, addr, url)
 		case http.MethodPost:
-			h.selectUTXOs(w, r, addr)
+			h.selectUTXOs(w, r, addr, url)
 		default:
 			invalidMethod(w, r)
 		}
@@ -232,7 +232,12 @@ func (h *Handler) address(w http.ResponseWriter, r *http.Request, url URLHelper)
 }
 
 // read query
-func (h *Handler) addressUTXOs(w http.ResponseWriter, r *http.Request, addr string) {
+func (h *Handler) addressUTXOs(w http.ResponseWriter, r *http.Request, addr string, url URLHelper) {
+	if !url.Empty() {
+		invalidEndpoint(w, r)
+		return
+	}
+
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
@@ -255,7 +260,12 @@ func (h *Handler) addressUTXOs(w http.ResponseWriter, r *http.Request, addr stri
 }
 
 // write query
-func (h *Handler) selectUTXOs(w http.ResponseWriter, r *http.Request, addr string) {
+func (h *Handler) selectUTXOs(w http.ResponseWriter, r *http.Request, addr string, url URLHelper) {
+	if !url.Empty() {
+		invalidEndpoint(w, r)
+		return
+	}
+
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -431,6 +441,11 @@ func (h *Handler) blockTx(w http.ResponseWriter, r *http.Request, url URLHelper,
 		return
 	}
 
+	if !url.Empty() {
+		invalidEndpoint(w, r)
+		return
+	}
+
 	txIndex, err := strconv.ParseInt(txIndexStr, 10, 32)
 	if err != nil {
 		invalidEndpoint(w, r)
@@ -465,16 +480,21 @@ func (h *Handler) chain(w http.ResponseWriter, r *http.Request, url URLHelper) {
 
 	switch cmp {
 	case "tip":
-		h.chainTip(w, r)
+		h.chainTip(w, r, url)
 	default:
 		invalidEndpoint(w, r)
 	}
 }
 
 // read query, but doesnt depend on recent write operations, so no need to lock
-func (h *Handler) chainTip(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) chainTip(w http.ResponseWriter, r *http.Request, url URLHelper) {
 	if r.Method != "GET" {
 		invalidMethod(w, r)
+		return
+	}
+
+	if !url.Empty() {
+		invalidEndpoint(w, r)
 		return
 	}
 
@@ -625,18 +645,25 @@ func (h *Handler) policyAsset(w http.ResponseWriter, r *http.Request, url URLHel
 		return
 	}
 
+	fullAssetName := hex.EncodeToString(policy) + hex.EncodeToString(assetName)
+
 	cmp, url := url.Pop()
 	switch cmp {
 	case "addresses":
-		h.policyAssetAddresses(w, r, hex.EncodeToString(policy)+hex.EncodeToString(assetName))
+		h.policyAssetAddresses(w, r, fullAssetName, url)
 	default:
 		invalidEndpoint(w, r)
 	}
 }
 
-func (h *Handler) policyAssetAddresses(w http.ResponseWriter, r *http.Request, asset string) {
+func (h *Handler) policyAssetAddresses(w http.ResponseWriter, r *http.Request, asset string, url URLHelper) {
 	if r.Method != "GET" {
 		invalidMethod(w, r)
+		return
+	}
+
+	if !url.Empty() {
+		invalidEndpoint(w, r)
 		return
 	}
 
@@ -696,6 +723,12 @@ type TxEnvelope struct {
 	CBORHex     string `json:"cborHex"`
 	Type        string `json:"type,omitempty"`
 	Description string `json:"description,omitempty"`
+}
+
+type SubmitTxResponse struct {
+	TxID            string   `json:"txID"`
+	Message         string   `json:"message,omitempty"`
+	ExtraSignatures []string `json:"extraSignatures,omitempty"`
 }
 
 // write query
@@ -765,7 +798,7 @@ func (h *Handler) submitTx(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tx, err = h.signCollateral(tx)
+	tx, extraSignature, err := h.signCollateral(tx)
 	if err != nil {
 		internalError(w, err)
 		return
@@ -790,7 +823,7 @@ func (h *Handler) submitTx(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.submitTxWithDeps(txPath)
+	message, err := h.submitTxWithDeps(txPath)
 	if err != nil {
 		internalError(w, err)
 		return
@@ -805,80 +838,89 @@ func (h *Handler) submitTx(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+
 	h.mempool.AddTx(tx, ttlTime)
 
-	if _, err := w.Write([]byte(result)); err != nil {
-		internalError(w, err)
-		return
+	txID := tx.Hash()
+
+	response := SubmitTxResponse{
+		TxID:            hex.EncodeToString(txID[:]),
+		Message:         message,
+		ExtraSignatures: []string{},
 	}
+
+	if extraSignature != "" {
+		response.ExtraSignatures = append(response.ExtraSignatures, extraSignature)
+	}
+
+	respondWithJSON(w, response)
 }
 
-
-func (h *Handler) signCollateral(tx ledger.Transaction) (ledger.Transaction, error) {
+func (h *Handler) signCollateral(tx ledger.Transaction) (ledger.Transaction, string, error) {
 	if h.config.Wallet == nil {
-		return tx, nil
+		return tx, "", nil
 	}
 
 	if h.config.Collateral == "" {
-		return tx, nil
+		return tx, "", nil
 	}
 
 	if !isBabbageOrConwayTx(tx) {
-		return tx, nil
+		return tx, "", nil
 	}
 
 	if len(tx.Collateral()) != 1 {
-		return tx, nil
-	} 
-	
+		return tx, "", nil
+	}
+
 	if tx.CollateralReturn() != nil {
-		return tx, nil
+		return tx, "", nil
 	}
 
 	input := tx.Collateral()[0]
 	inputID := fmt.Sprintf("%s%d", input.Id().String(), input.Index())
 
 	if inputID != h.config.Collateral {
-		return tx, nil
+		return tx, "", nil
 	}
 
 	key, err := firstEnterprisePrvKey(h.config.Wallet)
 	if err != nil {
-		fmt.Printf("unable to generate collateral wallet key (%v)", err)
-		return tx, nil
+		fmt.Printf("unable to generate collateral wallet key (%v)\n", err)
+		return tx, "", nil
 	}
-
 
 	hash := tx.Hash().Bytes()
 	witness := common.VkeyWitness{
 		Vkey:      key.PubKey(),
 		Signature: key.Sign(hash),
 	}
+
 	witnessBytes, err := cbor.Encode(witness)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	witness_, err := Decode(witnessBytes)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	d, err := Decode(tx.Cbor())
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	txList, ok := d.(*DecodedList)
 	if !ok || len(txList.Items) != 4 {
 		fmt.Println("decoded tx isn't a tuple with 4 entries")
-		return tx, nil
+		return tx, "", nil
 	}
 
 	txWitnessesMap, ok := (txList.Items[1]).(*DecodedMap)
 	if !ok || len(txWitnessesMap.Pairs) < 1 {
 		fmt.Println("decoded tx witnesses isn't a map with at least one entry")
-		return tx, nil
+		return tx, "", nil
 	}
 
 	signaturesI := -1
@@ -897,7 +939,7 @@ func (h *Handler) signCollateral(tx ledger.Transaction) (ledger.Transaction, err
 		txWitnessesMap.Pairs = append(txWitnessesMap.Pairs, DecodedPair{
 			Key: &DecodedInt{big.NewInt(0)},
 			Value: &DecodedList{
-				Type: "set", // TODO: we might need to detect this from other entries
+				Type:  "set", // TODO: we might need to detect this from other entries
 				Items: []Decoded{witness_},
 			},
 		})
@@ -906,19 +948,19 @@ func (h *Handler) signCollateral(tx ledger.Transaction) (ledger.Transaction, err
 		signatures, ok := (pair.Value).(*DecodedList)
 		if !ok {
 			fmt.Println("signatures entry isn't a list")
-			return tx, nil
+			return tx, "", nil
 		}
-	
+
 		signatures.Items = append(signatures.Items, witness_)
 	}
 
 	updatedTxBytes := d.Cbor()
 	tx, err = decodeTx(updatedTxBytes)
 	if err != nil {
-		return nil, fmt.Errorf("failed to update tx bytes with signature for collateral (%v)", err)
+		return nil, "", fmt.Errorf("failed to update tx bytes with signature for collateral (%v)", err)
 	}
 
-	return tx, nil
+	return tx, hex.EncodeToString(witnessBytes), nil
 }
 
 func isBabbageOrConwayTx(tx ledger.Transaction) bool {
@@ -960,20 +1002,20 @@ func (h *Handler) submitTxWithDeps(txPath string) (string, error) {
 
 		if _, err := os.Stat(p); err != nil {
 			if errors.Is(err, os.ErrNotExist) {
-				fmt.Printf("tx %s not found, skipping", p)
+				fmt.Printf("tx %s not found, skipping\n", p)
 			} else {
-				fmt.Printf("problem reading tx %s, skipping (%v)", p, err)
+				fmt.Printf("problem reading tx %s, skipping (%v)\n", p, err)
 			}
 			continue
 			// path/to/whatever does not exist
 		}
 
-		fmt.Printf("resubmitting %s", missingInput.TxID)
+		fmt.Printf("resubmitting %s\n", missingInput.TxID)
 
 		// anything in the mempool should also have its content written to its tmp path
 		_, err := h.submitTxWithDeps(p)
 		if err != nil {
-			fmt.Printf("failed to resubmit %s: %v", missingInput.TxID, err)
+			fmt.Printf("failed to resubmit %s: %v\n", missingInput.TxID, err)
 		}
 	}
 
@@ -1069,6 +1111,11 @@ func (h *Handler) txOutput(w http.ResponseWriter, r *http.Request, url URLHelper
 		return
 	}
 
+	if !url.Empty() {
+		invalidEndpoint(w, r)
+		return
+	}
+
 	outputIndex, err := strconv.ParseUint(indexStr, 10, 32)
 	if err != nil {
 		invalidEndpoint(w, r)
@@ -1129,14 +1176,19 @@ func (h *Handler) utxo(w http.ResponseWriter, r *http.Request, url URLHelper) {
 
 	switch cmp {
 	case "":
-		h.utxoContent(w, r, txID, int(outputIndex))
+		h.utxoContent(w, r, txID, int(outputIndex), url)
 	default:
 		invalidEndpoint(w, r)
 	}
 }
 
 // read query
-func (h *Handler) utxoContent(w http.ResponseWriter, r *http.Request, txID string, outputIndex int) {
+func (h *Handler) utxoContent(w http.ResponseWriter, r *http.Request, txID string, outputIndex int, url URLHelper) {
+	if !url.Empty() {
+		invalidEndpoint(w, r)
+		return
+	}
+
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
@@ -1226,21 +1278,24 @@ func (h *Handler) page(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (url URLHelper) components() []string {
+	// ignores the first and last slash
+	return strings.Split(strings.Trim(url.url.Path, "/"), "/")
+}
+
 // returns an empty string if there is nothing else to pop
 func (url URLHelper) Pop() (string, URLHelper) {
-	// ignores the first slash
-	path := url.url.Path
-	if strings.HasPrefix(path, "/") {
-		path = path[1:]
-	}
+	cmps := url.components()
 
-	components := strings.Split(path, "/")
-
-	if url.pos < len(components) {
-		return components[url.pos], URLHelper{url.url, url.pos + 1}
+	if url.pos < len(cmps) {
+		return cmps[url.pos], URLHelper{url.url, url.pos + 1}
 	} else {
 		return "", url
 	}
+}
+
+func (url URLHelper) Empty() bool {
+	return url.pos >= len(url.components())
 }
 
 func deriveMimeTypeFromExt(p string) string {

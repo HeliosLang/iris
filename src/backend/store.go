@@ -713,7 +713,7 @@ func readImmChunk(file *os.File) (*ImmChunk, error) {
 
 	indices := make([]SecondaryIndexEntry, 0)
 
-	for true {
+	for {
 		var entry SecondaryIndexEntry
 
 		// BigEndian has been verified to be correct thanks to trial-and-error
@@ -772,19 +772,6 @@ func readVolChunk(file *os.File) (*VolChunk, error) {
 	return &VolChunk{stat.ModTime(), blocks}, nil
 }
 
-func nextCBORItem(bs []byte) ([]byte, []byte, error) {
-	var v interface{}
-	nRead, err := cbor.Decode(bs, &v)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	sub := bs[0:nRead]
-	rest := bs[nRead:]
-
-	return sub, rest, nil
-}
-
 func extractChunkID(path string) (uint32, error) {
 	// remove directories and file extension
 	idStr, _, _ := strings.Cut(filepath.Base(path), ".")
@@ -821,28 +808,28 @@ func decodeBlock(blockType int, bs []byte) (ledger.Block, int, error) {
 	switch blockType {
 	case ledger.BlockTypeByronEbb:
 		var b ledger.ByronEpochBoundaryBlock
-		return decodeEraBlock[*ledger.ByronEpochBoundaryBlock](bs, &b)
+		return decodeEraBlock(bs, &b)
 	case ledger.BlockTypeByronMain:
 		var b ledger.ByronMainBlock
-		return decodeEraBlock[*ledger.ByronMainBlock](bs, &b)
+		return decodeEraBlock(bs, &b)
 	case ledger.BlockTypeShelley:
 		var b ledger.ShelleyBlock
-		return decodeEraBlock[*ledger.ShelleyBlock](bs, &b)
+		return decodeEraBlock(bs, &b)
 	case ledger.BlockTypeAllegra:
 		var b ledger.AllegraBlock
-		return decodeEraBlock[*ledger.AllegraBlock](bs, &b)
+		return decodeEraBlock(bs, &b)
 	case ledger.BlockTypeMary:
 		var b ledger.MaryBlock
-		return decodeEraBlock[*ledger.MaryBlock](bs, &b)
+		return decodeEraBlock(bs, &b)
 	case ledger.BlockTypeAlonzo:
 		var b ledger.AlonzoBlock
-		return decodeEraBlock[*ledger.AlonzoBlock](bs, &b)
+		return decodeEraBlock(bs, &b)
 	case ledger.BlockTypeBabbage:
 		var b ledger.BabbageBlock
-		return decodeEraBlock[*ledger.BabbageBlock](bs, &b)
+		return decodeEraBlock(bs, &b)
 	case ledger.BlockTypeConway:
 		var b ledger.ConwayBlock
-		return decodeEraBlock[*ledger.ConwayBlock](bs, &b)
+		return decodeEraBlock(bs, &b)
 	default:
 		return nil, 0, fmt.Errorf("unhandled block type %d", blockType)
 	}

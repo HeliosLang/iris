@@ -43,13 +43,13 @@ func serve(cmd *cobra.Command, args []string) error {
 	cfg := NewConfig()
 
 	if useHTTP {
-		return serveHTTP(cmd, args, cfg)
+		return serveHTTP(cfg)
 	} else {
-		return serveHTTPS(cmd, args, cfg)
+		return serveHTTPS(cfg)
 	}
 }
 
-func serveHTTP(cmd *cobra.Command, args []string, cfg *Config) error {
+func serveHTTP(cfg *Config) error {
 	handler, err := NewHandler(cfg)
 	if err != nil {
 		return err
@@ -70,7 +70,7 @@ func serveHTTP(cmd *cobra.Command, args []string, cfg *Config) error {
 	return nil
 }
 
-func serveHTTPS(cmd *cobra.Command, args []string, cfg *Config) error {
+func serveHTTPS(cfg *Config) error {
 	handler, err := NewHandler(cfg)
 	if err != nil {
 		return err

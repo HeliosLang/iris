@@ -23,18 +23,18 @@ type DecodedBool struct {
 }
 
 type DecodedBytes struct {
-	Type string // "indef" or "def"
+	Type  string // "indef" or "def"
 	Bytes []byte
 }
 
 type DecodedConstr struct {
-	Tag int
+	Tag    int
 	Fields *DecodedList
 }
 
 type DecodedEnvelope struct {
-	Tag int
-	Type string // "indef" or "def"
+	Tag   int
+	Type  string // "indef" or "def"
 	Inner Decoded
 }
 
@@ -43,36 +43,36 @@ type DecodedInt struct {
 }
 
 type DecodedString struct {
-	Type string // "single" or "list"
+	Type  string // "single" or "list"
 	Value string
 }
 
 // also used for set
 type DecodedList struct {
-	Type string // "indef", "def" or "set"
+	Type  string // "indef", "def" or "set"
 	Items []Decoded
 }
 
 type DecodedMap struct {
-	Type string // "indef" or "def"
+	Type  string // "indef" or "def"
 	Pairs []DecodedPair
 }
 
-type DecodedNull struct {}
+type DecodedNull struct{}
 
 type DecodedPair struct {
-	Key Decoded
+	Key   Decoded
 	Value Decoded
 }
 
 type EncodedPair struct {
-	Key []byte
+	Key   []byte
 	Value []byte
 }
 
 type Stream struct {
 	cbor []byte
-	pos int
+	pos  int
 }
 
 func NewStream(cbor []byte) (*Stream, error) {
@@ -138,7 +138,7 @@ func EncodeAssets(assets []PolicyAsset) ([]byte, error) {
 			}
 
 			innerPairs = append(innerPairs, EncodedPair{
-				Key: encodedTokenName,
+				Key:   encodedTokenName,
 				Value: encodedQuantity,
 			})
 		}
@@ -150,18 +150,18 @@ func EncodeAssets(assets []PolicyAsset) ([]byte, error) {
 
 		outerPairs = append(
 			outerPairs, EncodedPair{
-				Key: encodedPolicy,
+				Key:   encodedPolicy,
 				Value: EncodeMap(innerPairs),
 			},
 		)
 	}
-	
+
 	return EncodeMap(outerPairs), nil
 }
 
 func EncodeBytes(bs []byte) []byte {
 	return encodeDefBytes(bs)
-} 
+}
 
 func EncodeDefList(entries [][]byte) []byte {
 	bs := encodeDefListStart(len(entries))
@@ -235,7 +235,6 @@ func EncodeInt(x int64) []byte {
 	return encodeInt(big.NewInt(x))
 }
 
-
 func EncodeLargeInt(x string) ([]byte, error) {
 	var z big.Int
 
@@ -263,7 +262,7 @@ func EncodeObjectIKey(fields map[int][]byte) []byte {
 
 	for i, f := range fields {
 		pairs = append(pairs, EncodedPair{
-			Key: EncodeInt(int64(i)),
+			Key:   EncodeInt(int64(i)),
 			Value: f,
 		})
 	}
@@ -280,7 +279,7 @@ func EncodeRefScript(refScript string) ([]byte, error) {
 
 	return append(EncodeTag(24), EncodeBytes(
 		EncodeTuple(
-			EncodeInt(2), // tag for PlutusV2 (TODO: get plutus version from somewhere)
+			EncodeInt(2),    // tag for PlutusV2 (TODO: get plutus version from somewhere)
 			EncodeBytes(bs), // the flat bytes must be wrapped at least once
 		),
 	)...), nil
@@ -411,20 +410,20 @@ func EncodeValue(lovelace string, assets []PolicyAsset) ([]byte, error) {
 }
 
 func encodeDefHead(m int, n *big.Int) []byte {
-	if (n.Cmp(big.NewInt(23)) < 1) {
-        return []byte{byte(32 * m + int(n.Int64()))}
-    } else if (n.Cmp(big.NewInt(24)) >= 0 && n.Cmp(big.NewInt(256)) < 0) {
-        return []byte{
-			byte(32 * m + 24),
+	if n.Cmp(big.NewInt(23)) < 1 {
+		return []byte{byte(32*m + int(n.Int64()))}
+	} else if n.Cmp(big.NewInt(24)) >= 0 && n.Cmp(big.NewInt(256)) < 0 {
+		return []byte{
+			byte(32*m + 24),
 			byte(n.Int64()),
 		}
-    } else if (n.Cmp(big.NewInt(256)) >= 0 && n.Cmp(big.NewInt(256*256)) < 0) {
-        return []byte{
-            byte(32 * m + 25),
-            byte((int(n.Int64()) / 256) % 256),
-            byte(int(n.Int64()) % 256),
+	} else if n.Cmp(big.NewInt(256)) >= 0 && n.Cmp(big.NewInt(256*256)) < 0 {
+		return []byte{
+			byte(32*m + 25),
+			byte((int(n.Int64()) / 256) % 256),
+			byte(int(n.Int64()) % 256),
 		}
-	} else if (n.Cmp(big.NewInt(256*256)) >= 0 && n.Cmp(big.NewInt(256*256*256*256)) < 0) {
+	} else if n.Cmp(big.NewInt(256*256)) >= 0 && n.Cmp(big.NewInt(256*256*256*256)) < 0 {
 		e4 := encodeIntBigEndian(n)
 
 		for len(e4) < 4 {
@@ -432,8 +431,8 @@ func encodeDefHead(m int, n *big.Int) []byte {
 		}
 
 		return append([]byte{byte(32*m + 26)}, e4...)
-    } else {
-		L := big.NewInt(256*256*256*256)
+	} else {
+		L := big.NewInt(256 * 256 * 256 * 256)
 
 		var z big.Int
 
@@ -446,7 +445,7 @@ func encodeDefHead(m int, n *big.Int) []byte {
 				e8 = append([]byte{0}, e8...)
 			}
 
-			return append([]byte{byte(32*m+27)}, e8...)
+			return append([]byte{byte(32*m + 27)}, e8...)
 		} else {
 			panic("unsupported n")
 		}
@@ -485,7 +484,7 @@ func encodeDefMapStart(n int) []byte {
 }
 
 func encodeIndefHead(m int) []byte {
-	return []byte{byte(32*m  + 31)}
+	return []byte{byte(32*m + 31)}
 }
 
 func encodeIndefListEnd() []byte {
@@ -522,28 +521,28 @@ func encodeInt(x *big.Int) []byte {
 	(&lim).Lsh(big.NewInt(2), 63)
 	(&negLim).Neg(&lim)
 
-	if (x.Cmp(big.NewInt(0)) >= 0 && x.Cmp(&lim) < 0) {
-        return encodeDefHead(0, x)
-	} else if (x.Cmp(&lim) >= 0) {
+	if x.Cmp(big.NewInt(0)) >= 0 && x.Cmp(&lim) < 0 {
+		return encodeDefHead(0, x)
+	} else if x.Cmp(&lim) >= 0 {
 		bs := encodeDefHead(6, big.NewInt(2))
 
 		return append(bs, EncodeBytes(encodeIntBigEndian(x))...)
-	} else if (x.Cmp(big.NewInt(-1)) <= 0 && x.Cmp(&negLim) >= 0) {
-        return encodeDefHead(1, negMinusOne(x))
-    } else {
+	} else if x.Cmp(big.NewInt(-1)) <= 0 && x.Cmp(&negLim) >= 0 {
+		return encodeDefHead(1, negMinusOne(x))
+	} else {
 		bs := encodeDefHead(6, big.NewInt(3))
 
 		return append(bs, EncodeBytes(encodeIntBigEndian(negMinusOne(x)))...)
-    }
+	}
 }
 
 func encodeIntBigEndian(x *big.Int) []byte {
-	if (x.Cmp(big.NewInt(0)) == 0) {
-        return []byte{0}
-    } else {
-        res := []byte{}
+	if x.Cmp(big.NewInt(0)) == 0 {
+		return []byte{0}
+	} else {
+		res := []byte{}
 
-        for x.Cmp(big.NewInt(0)) > 0 {
+		for x.Cmp(big.NewInt(0)) > 0 {
 			var z big.Int
 			var m big.Int
 
@@ -551,15 +550,15 @@ func encodeIntBigEndian(x *big.Int) []byte {
 
 			res = append([]byte{byte(m.Int64())}, res...)
 
-            x = &z
-        }
+			x = &z
+		}
 
-        return res
-    }
+		return res
+	}
 }
 
 func majorType(bs []byte) int {
-	return int(bs[0])/32
+	return int(bs[0]) / 32
 }
 
 func decode(s *Stream) (Decoded, error) {
@@ -622,9 +621,9 @@ func decodeConstrTag(s *Stream) (int, error) {
 		return 0, err
 	}
 
-	if (n.Uint64() < 102) {
+	if n.Uint64() < 102 {
 		return 0, errors.New("unexpected constr tag")
-	} else if (n.Uint64() == 102) {
+	} else if n.Uint64() == 102 {
 		mCheck, nCheck, err := decodeDefHead(s)
 		if err != nil {
 			return 0, err
@@ -650,16 +649,16 @@ func decodeConstrTag(s *Stream) (int, error) {
 }
 
 func encodeConstrTag(tag int) []byte {
-    if (tag >= 0 && tag <= 6) {
-        return encodeDefHead(6, big.NewInt(int64(121 + tag)))
-    } else if (tag >= 7 && tag <= 127) {
-        return encodeDefHead(6, big.NewInt(int64(1280 + tag - 7)))
-    } else {
+	if tag >= 0 && tag <= 6 {
+		return encodeDefHead(6, big.NewInt(int64(121+tag)))
+	} else if tag >= 7 && tag <= 127 {
+		return encodeDefHead(6, big.NewInt(int64(1280+tag-7)))
+	} else {
 		bs := append(encodeDefHead(6, big.NewInt(102)), encodeDefHead(4, big.NewInt(2))...)
 		bs = append(bs, encodeInt(big.NewInt(int64(tag)))...)
-		
-        return bs
-    }
+
+		return bs
+	}
 }
 
 func (d *DecodedConstr) Cbor() []byte {
@@ -676,16 +675,16 @@ func decodeIntBigEndian(bs []byte) (*big.Int, error) {
 	}
 
 	var (
-		a big.Int
+		a  big.Int
 		b_ big.Int
-		c big.Int
+		c  big.Int
 	)
 
 	p := big.NewInt(1)
-    total := big.NewInt(0)
+	total := big.NewInt(0)
 
-    for i := len(bs) - 1; i >= 0; i-- {
-        b := bs[i]
+	for i := len(bs) - 1; i >= 0; i-- {
+		b := bs[i]
 
 		(&a).Mul(big.NewInt(int64(b)), p)
 		(&b_).Add(total, &a)
@@ -693,9 +692,9 @@ func decodeIntBigEndian(bs []byte) (*big.Int, error) {
 
 		(&c).Mul(p, big.NewInt(256))
 		p = &c
-    }
+	}
 
-    return total, nil
+	return total, nil
 }
 
 func decodeDefHead(s *Stream) (int, *big.Int, error) {
@@ -747,8 +746,8 @@ func decodeDefHead(s *Stream) (int, *big.Int, error) {
 }
 
 func decodeFirstHeadByte(b0 byte) (int, int) {
-	m := b0/32
-	n0 := b0%32
+	m := b0 / 32
+	n0 := b0 % 32
 
 	return int(m), int(n0)
 }
@@ -759,11 +758,12 @@ func decodeBool(s *Stream) (*DecodedBool, error) {
 		return nil, err
 	}
 
-	if b == 245 {
+	switch b {
+	case 245:
 		return &DecodedBool{true}, nil
-	} else if b == 244 {
+	case 244:
 		return &DecodedBool{false}, nil
-	} else {
+	default:
 		return nil, errors.New("invalid bool byte")
 	}
 }
@@ -811,7 +811,7 @@ func decodeIndefBytes(s *Stream) (*DecodedBytes, error) {
 	}
 
 	return &DecodedBytes{
-		Type: "indef",
+		Type:  "indef",
 		Bytes: res,
 	}, nil
 }
@@ -828,17 +828,18 @@ func decodeDefBytes(s *Stream) (*DecodedBytes, error) {
 	}
 
 	return &DecodedBytes{
-		Type: "def",
+		Type:  "def",
 		Bytes: bs,
 	}, nil
 }
 
 func (d *DecodedBytes) Cbor() []byte {
-	if d.Type == "indef" {
+	switch d.Type {
+	case "indef":
 		return encodeIndefBytes(d.Bytes)
-	} else if d.Type == "def" {
+	case "def":
 		return encodeDefBytes(d.Bytes)
-	} else {
+	default:
 		panic("unhandled DecodedBytes.Type")
 	}
 }
@@ -871,11 +872,12 @@ func (d *DecodedEnvelope) Cbor() []byte {
 	inner := d.Inner.Cbor()
 	bs := EncodeTag(d.Tag)
 
-	if d.Type == "indef" {
+	switch d.Type {
+	case "indef":
 		return append(bs, encodeIndefBytes(inner)...)
-	} else if d.Type == "def" {
+	case "def":
 		return append(bs, encodeDefBytes(inner)...)
-	} else {
+	default:
 		panic("unhandled envelope type")
 	}
 }
@@ -886,11 +888,12 @@ func decodeInt(s *Stream) (*DecodedInt, error) {
 		return nil, err
 	}
 
-	if m == 0 {
+	switch m {
+	case 0:
 		return &DecodedInt{n}, nil
-	} else if m == 1 {
+	case 1:
 		return &DecodedInt{negMinusOne(n)}, nil
-	} else if m == 6 {
+	case 6:
 		if n.Uint64() == 2 {
 			bs, err := decodeBytes(s)
 			if err != nil {
@@ -918,7 +921,7 @@ func decodeInt(s *Stream) (*DecodedInt, error) {
 		} else {
 			return nil, errors.New("unexpected tag n")
 		}
-	} else {
+	default:
 		return nil, errors.New("unexpected tag m")
 	}
 }
@@ -980,7 +983,7 @@ func decodeList(s *Stream) (*DecodedList, error) {
 	var t string
 
 	if s.isIndefList() {
-		err := decodeIndefList(s, func (s *Stream) error {
+		err := decodeIndefList(s, func(s *Stream) error {
 			item, err := decode(s)
 			if err != nil {
 				return err
@@ -996,7 +999,7 @@ func decodeList(s *Stream) (*DecodedList, error) {
 
 		t = "indef"
 	} else {
-		err := decodeDefList(s, func (s *Stream) error {
+		err := decodeDefList(s, func(s *Stream) error {
 			item, err := decode(s)
 			if err != nil {
 				return err
@@ -1022,14 +1025,15 @@ func (d *DecodedList) Cbor() []byte {
 		items = append(items, item.Cbor())
 	}
 
-	if d.Type == "indef" {
-		return EncodeIndefList(items)	
-	} else if d.Type == "def" {
+	switch d.Type {
+	case "indef":
+		return EncodeIndefList(items)
+	case "def":
 		return EncodeDefList(items)
-	} else if d.Type == "set" {
+	case "set":
 		bs := EncodeTag(258)
 		return append(bs, EncodeDefList(items)...)
-	} else {
+	default:
 		panic("unhandled list type")
 	}
 }
@@ -1065,7 +1069,7 @@ func decodeIndefMap(s *Stream, fnKey func(s *Stream) error, fnValue func(s *Stre
 	return nil
 }
 
-func decodeDefMap(s *Stream, fnKey func (s *Stream) error, fnValue func (s *Stream) error) error {
+func decodeDefMap(s *Stream, fnKey func(s *Stream) error, fnValue func(s *Stream) error) error {
 	m, n, err := decodeDefHead(s)
 	if err != nil {
 		return err
@@ -1083,7 +1087,7 @@ func decodeDefMap(s *Stream, fnKey func (s *Stream) error, fnValue func (s *Stre
 		if err := fnValue(s); err != nil {
 			return err
 		}
-    }
+	}
 
 	return nil
 }
@@ -1096,7 +1100,7 @@ func decodeMap(s *Stream) (*DecodedMap, error) {
 	if s.isIndefMap() {
 		s.shiftOne()
 
-		err := decodeIndefMap(s, func (s *Stream) error {
+		err := decodeIndefMap(s, func(s *Stream) error {
 			k, err := decode(s)
 			if err != nil {
 				return err
@@ -1104,7 +1108,7 @@ func decodeMap(s *Stream) (*DecodedMap, error) {
 
 			keys = append(keys, k)
 			return nil
-		}, func (s *Stream) error {
+		}, func(s *Stream) error {
 			v, err := decode(s)
 			if err != nil {
 				return err
@@ -1121,7 +1125,7 @@ func decodeMap(s *Stream) (*DecodedMap, error) {
 
 		t = "indef"
 	} else {
-		err := decodeDefMap(s, func (s *Stream) error {
+		err := decodeDefMap(s, func(s *Stream) error {
 			k, err := decode(s)
 			if err != nil {
 				return err
@@ -1129,7 +1133,7 @@ func decodeMap(s *Stream) (*DecodedMap, error) {
 
 			keys = append(keys, k)
 			return nil
-		}, func (s *Stream) error {
+		}, func(s *Stream) error {
 			v, err := decode(s)
 			if err != nil {
 				return err
@@ -1154,8 +1158,8 @@ func decodeMap(s *Stream) (*DecodedMap, error) {
 	pairs := make([]DecodedPair, 0)
 	for i, k := range keys {
 		pairs = append(pairs, DecodedPair{
-			Key: k,
-			Value: values[i], 
+			Key:   k,
+			Value: values[i],
 		})
 	}
 
@@ -1167,16 +1171,17 @@ func (d *DecodedMap) Cbor() []byte {
 
 	for _, pair := range d.Pairs {
 		pairs = append(pairs, EncodedPair{
-			Key: pair.Key.Cbor(),
+			Key:   pair.Key.Cbor(),
 			Value: pair.Value.Cbor(),
 		})
 	}
 
-	if d.Type == "indef" {
+	switch d.Type {
+	case "indef":
 		return EncodeIndefMap(pairs)
-	} else if d.Type == "def" {
+	case "def":
 		return EncodeDefMap(pairs)
-	} else {
+	default:
 		panic("unhandled map type")
 	}
 }
@@ -1208,7 +1213,7 @@ func decodeSet(s *Stream) (*DecodedList, error) {
 
 	items := make([]Decoded, 0)
 
-	err = decodeDefList(s, func (s *Stream) error {
+	err = decodeDefList(s, func(s *Stream) error {
 		item, err := decode(s)
 		if err != nil {
 			return err
@@ -1229,7 +1234,7 @@ func decodeString(s *Stream) (*DecodedString, error) {
 	if s.isDefList() {
 		res := ""
 
-		err := decodeDefList(s, func (s *Stream)  error {
+		err := decodeDefList(s, func(s *Stream) error {
 			s_, err := decodeStringInternal(s)
 			if err != nil {
 				return err
@@ -1243,7 +1248,7 @@ func decodeString(s *Stream) (*DecodedString, error) {
 		}
 
 		return &DecodedString{
-			Type: "list",
+			Type:  "list",
 			Value: res,
 		}, nil
 	} else {
@@ -1253,7 +1258,7 @@ func decodeString(s *Stream) (*DecodedString, error) {
 		}
 
 		return &DecodedString{
-			Type: "single",
+			Type:  "single",
 			Value: str,
 		}, nil
 	}
@@ -1266,10 +1271,10 @@ func (s *DecodedString) Cbor() []byte {
 func decodeStringInternal(s *Stream) (string, error) {
 	m, n, err := decodeDefHead(s)
 	if err != nil {
-		return  "", err
+		return "", err
 	}
 
-	if (m != 3) {
+	if m != 3 {
 		return "", errors.New("unexpected tag m")
 	}
 
@@ -1326,7 +1331,7 @@ func (s *Stream) isIndefBytes() bool {
 		return false
 	}
 
-	return int(b) == 2*32 + 31
+	return int(b) == 2*32+31
 }
 
 func (s *Stream) copy() *Stream {
@@ -1338,7 +1343,7 @@ func (s *Stream) isConstr() bool {
 	if err != nil {
 		return false
 	}
-	
+
 	if m == 6 {
 		n_ := n.Uint64()
 
@@ -1349,18 +1354,21 @@ func (s *Stream) isConstr() bool {
 }
 
 func (s *Stream) isInt() bool {
-	first, err := s.peekOne() 
+	first, err := s.peekOne()
 	if err != nil {
 		return false
 	}
 
 	m, n0 := decodeFirstHeadByte(first)
 
-	if m == 0 || m == 1 {
+	switch m {
+	case 0:
 		return true
-	} else if m == 6 {
+	case 1:
+		return true
+	case 6:
 		return n0 == 2 || n0 == 3
-	} else {
+	default:
 		return false
 	}
 }
@@ -1380,7 +1388,7 @@ func (s *Stream) isIndefList() bool {
 		return false
 	}
 
-	return 4*32+31 == b
+	return b == 159
 }
 
 func (s *Stream) isList() bool {
@@ -1407,7 +1415,7 @@ func (s *Stream) isIndefMap() bool {
 		return false
 	}
 
-	return 5*32+31 == b
+	return b == 191
 }
 
 func (s *Stream) isNull() bool {
@@ -1474,8 +1482,8 @@ func (s *Stream) peekMany(n int) ([]byte, error) {
 		return nil, errors.New("negative n")
 	}
 
-	if s.pos + n <= len(s.cbor) {
-		res := s.cbor[s.pos:s.pos+n]
+	if s.pos+n <= len(s.cbor) {
+		res := s.cbor[s.pos : s.pos+n]
 		return res, nil
 	} else {
 		return nil, errors.New("at end")
@@ -1497,8 +1505,8 @@ func (s *Stream) shiftMany(n int) ([]byte, error) {
 		return nil, errors.New("negative n")
 	}
 
-	if s.pos + n <= len(s.cbor) {
-		res := s.cbor[s.pos:s.pos+n]
+	if s.pos+n <= len(s.cbor) {
+		res := s.cbor[s.pos : s.pos+n]
 		s.pos += n
 		return res, nil
 	} else {

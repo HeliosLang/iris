@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	sourceDir = "../../tmp/frontend"
+	sourceDir  = "../../tmp/frontend"
 	outputFile = "assets_gen.go"
 )
 
@@ -36,10 +36,6 @@ func main() {
 			return err
 		}
 
-		if err != nil {
-			return err
-		}
-
 		contentBytes, err := os.ReadFile(path)
 		if err != nil {
 			return err
@@ -51,7 +47,7 @@ func main() {
 
 		return nil
 	})
-	
+
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error walking the path: %v\n", err)
 		os.Exit(1)
