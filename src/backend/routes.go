@@ -823,7 +823,7 @@ func (h *Handler) submitTx(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	message, err := h.submitTxWithDeps(txPath)
+	message, err := h.submitTxWithRetries(txPath)
 	if err != nil {
 		internalError(w, err)
 		return
@@ -972,6 +972,31 @@ func isBabbageOrConwayTx(tx ledger.Transaction) bool {
 	default:
 		return false
 	}
+}
+
+// retries twice (first time after 5 seconds delay, second time after 10 seconds after first retry)
+func (h *Handler) submitTxWithRetries(txPath string) (string, error) {
+	var (
+		result string
+		err    error
+	)
+
+	for attempt := range 3 {
+		result, err = h.cli.SubmitTx(txPath)
+		if err == nil {
+			return result, nil
+		}
+
+		parsedErr := ParseTxSubmitError(err.Error())
+
+		if len(parsedErr.MissingInputs) == 0 {
+			return "", err
+		}
+
+		time.Sleep(time.Second * time.Duration((attempt+1)*5))
+	}
+
+	return result, err
 }
 
 func (h *Handler) submitTxWithDeps(txPath string) (string, error) {
