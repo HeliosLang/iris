@@ -112,6 +112,17 @@ func NewURLHelper(url *url.URL) URLHelper {
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// allow cross-origin requests from any domain
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "*")
+
+	if r.Method == http.MethodOptions {
+		// preflight request, return empty response
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
 	cmp, url := NewURLHelper(r.URL).Pop()
 
 	switch cmp {
